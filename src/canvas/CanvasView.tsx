@@ -1,13 +1,17 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import { useCanvasStore } from '../stores/canvasStore';
 import { useUiStore } from '../stores/uiStore';
 import { render } from './CanvasRenderer';
 import { handleWheel, createDragState, startDrag, updateDrag, endDrag } from './interaction/panZoom';
 import { screenToWorld, hitTestNode } from './interaction/hitTest';
+import { ContextMenu } from './interaction/ContextMenu';
 
 export function CanvasView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef(createDragState());
+  const [contextMenu, setContextMenu] = useState<{
+    x: number; y: number; nodeId: string;
+  } | null>(null);
 
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
@@ -55,7 +59,6 @@ export function CanvasView() {
   useEffect(() => {
     const onResize = () => {
       resizeCanvas();
-      // Trigger re-render by forcing viewport update
       setViewport({});
     };
     window.addEventListener('resize', onResize);
@@ -77,6 +80,11 @@ export function CanvasView() {
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      if (contextMenu) {
+        setContextMenu(null);
+        return;
+      }
+
       const canvas = canvasRef.current;
       if (!canvas) return;
 
@@ -88,6 +96,25 @@ export function CanvasView() {
       } else {
         selectNode(null);
         dragRef.current = startDrag(e.nativeEvent, viewport, dragRef.current);
+      }
+    },
+    [viewport, nodes, selectNode, contextMenu]
+  );
+
+  const onContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const world = screenToWorld(e.clientX, e.clientY, canvas, viewport);
+      const hit = hitTestNode(world.x, world.y, nodes);
+
+      if (hit) {
+        selectNode(hit.id);
+        setContextMenu({ x: e.clientX, y: e.clientY, nodeId: hit.id });
+      } else {
+        setContextMenu(null);
       }
     },
     [viewport, nodes, selectNode]
@@ -105,13 +132,24 @@ export function CanvasView() {
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ cursor: dragRef.current.isDragging ? 'grabbing' : 'grab' }}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        style={{ cursor: dragRef.current.isDragging ? 'grabbing' : 'grab' }}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+        onContextMenu={onContextMenu}
+      />
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          nodeId={contextMenu.nodeId}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+    </>
   );
 }

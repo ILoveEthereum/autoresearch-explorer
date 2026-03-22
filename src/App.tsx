@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { CanvasView } from './canvas/CanvasView';
 import { SessionControls } from './panels/SessionControls';
 import { DetailPanel } from './panels/DetailPanel';
+import { ChatPanel } from './panels/ChatPanel';
 import { TemplateSelector } from './panels/TemplateSelector';
 import { useCanvasStore } from './stores/canvasStore';
 import { useUiStore } from './stores/uiStore';
@@ -29,6 +30,7 @@ function App() {
     <div style={styles.app}>
       <SessionControls />
       <div style={styles.main}>
+        <ChatPanel />
         <div style={styles.canvasContainer}>
           <CanvasView />
         </div>

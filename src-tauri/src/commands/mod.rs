@@ -1,2 +1,3 @@
-pub mod template;
+pub mod chat;
 pub mod session;
+pub mod template;

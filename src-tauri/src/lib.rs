@@ -20,6 +20,8 @@ pub fn run() {
             commands::session::resume_session,
             commands::session::stop_session,
             commands::session::list_sessions,
+            commands::chat::send_chat,
+            commands::chat::send_signal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

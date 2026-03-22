@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useCanvasStore } from '../stores/canvasStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useChatStore } from '../stores/chatStore';
 import type { CanvasOp } from '../types/canvas';
 
 /**
@@ -32,6 +33,7 @@ export function useTauriEvents() {
   const applyOps = useCanvasStore((s) => s.applyOps);
   const setStatus = useSessionStore((s) => s.setStatus);
   const setLoopCount = useSessionStore((s) => s.setLoopCount);
+  const addChatMessage = useChatStore((s) => s.addMessage);
 
   useEffect(() => {
     const unlisteners: (() => void)[] = [];
@@ -54,7 +56,7 @@ export function useTauriEvents() {
       if (!cancelled) unlisteners.push(u3);
 
       const u4 = await listenWithRetry<{ from: string; text: string }>('chat-message', (event) => {
-        console.log('[Agent]', event.payload.text);
+        addChatMessage({ from: 'agent', text: event.payload.text });
       });
       if (!cancelled) unlisteners.push(u4);
 
@@ -70,5 +72,5 @@ export function useTauriEvents() {
       cancelled = true;
       unlisteners.forEach((u) => u());
     };
-  }, [applyOps, setStatus, setLoopCount]);
+  }, [applyOps, setStatus, setLoopCount, addChatMessage]);
 }
