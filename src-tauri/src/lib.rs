@@ -11,6 +11,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .manage(commands::session::AppState::new())
         .invoke_handler(tauri::generate_handler![
             commands::template::list_templates,
             commands::template::parse_template,

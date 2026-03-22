@@ -37,6 +37,10 @@ pub struct SessionRunner {
 impl SessionRunner {
     /// Run the continuous agent loop. This blocks until stopped or an error occurs.
     pub async fn run_loop(&mut self, app: &AppHandle) -> Result<(), String> {
+        // Give the frontend time to set up event listeners
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        tracing::info!("Agent loop starting for session: {}", self.session_name);
+
         loop {
             // 1. Check control signal
             let control = self.control_rx.borrow().clone();

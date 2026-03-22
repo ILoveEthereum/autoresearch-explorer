@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
-use tokio::sync::watch;
+use tokio::sync::{watch, Mutex};
 
 use crate::agent::runtime::{LoopControl, SessionRunner};
 use crate::agent::signals::SignalQueue;
@@ -11,11 +11,23 @@ use crate::storage::session_dir::{self, SessionMeta};
 use crate::storage::state_writer::AgentState;
 use crate::template::parser;
 
-/// Shared state managed by Tauri for the active session.
+/// Shared state for the active session, managed by Tauri.
+pub struct AppState {
+    pub active: Mutex<Option<ActiveSession>>,
+}
+
 pub struct ActiveSession {
     pub control_tx: watch::Sender<LoopControl>,
     pub signal_queue: Arc<SignalQueue>,
     pub session_id: String,
+}
+
+impl AppState {
+    pub fn new() -> Self {
+        Self {
+            active: Mutex::new(None),
+        }
+    }
 }
 
 #[tauri::command]
@@ -36,15 +48,19 @@ pub async fn create_session(
     let signal_queue = Arc::new(SignalQueue::new());
     let (control_tx, control_rx) = watch::channel(LoopControl::Run);
 
-    // Store the active session state in Tauri's managed state
-    let active = ActiveSession {
-        control_tx,
-        signal_queue: signal_queue.clone(),
-        session_id: meta.id.clone(),
-    };
-
-    // Replace any existing active session
-    app.manage(Arc::new(tokio::sync::Mutex::new(Some(active))));
+    // Stop any existing session first
+    {
+        let state = app.state::<AppState>();
+        let mut guard = state.active.lock().await;
+        if let Some(old) = guard.take() {
+            let _ = old.control_tx.send(LoopControl::Stop);
+        }
+        *guard = Some(ActiveSession {
+            control_tx,
+            signal_queue: signal_queue.clone(),
+            session_id: meta.id.clone(),
+        });
+    }
 
     let meta_clone = meta.clone();
     let session_name = name.clone();
@@ -77,38 +93,38 @@ pub async fn create_session(
 
 #[tauri::command]
 pub async fn pause_session(app: AppHandle) -> Result<(), String> {
-    if let Some(state) = app.try_state::<Arc<tokio::sync::Mutex<Option<ActiveSession>>>>() {
-        let guard = state.lock().await;
-        if let Some(active) = guard.as_ref() {
-            let _ = active.control_tx.send(LoopControl::Pause);
-            return Ok(());
-        }
+    let state = app.state::<AppState>();
+    let guard = state.active.lock().await;
+    if let Some(active) = guard.as_ref() {
+        let _ = active.control_tx.send(LoopControl::Pause);
+        Ok(())
+    } else {
+        Err("No active session".to_string())
     }
-    Err("No active session".to_string())
 }
 
 #[tauri::command]
 pub async fn resume_session(app: AppHandle) -> Result<(), String> {
-    if let Some(state) = app.try_state::<Arc<tokio::sync::Mutex<Option<ActiveSession>>>>() {
-        let guard = state.lock().await;
-        if let Some(active) = guard.as_ref() {
-            let _ = active.control_tx.send(LoopControl::Run);
-            return Ok(());
-        }
+    let state = app.state::<AppState>();
+    let guard = state.active.lock().await;
+    if let Some(active) = guard.as_ref() {
+        let _ = active.control_tx.send(LoopControl::Run);
+        Ok(())
+    } else {
+        Err("No active session".to_string())
     }
-    Err("No active session".to_string())
 }
 
 #[tauri::command]
 pub async fn stop_session(app: AppHandle) -> Result<(), String> {
-    if let Some(state) = app.try_state::<Arc<tokio::sync::Mutex<Option<ActiveSession>>>>() {
-        let mut guard = state.lock().await;
-        if let Some(active) = guard.take() {
-            let _ = active.control_tx.send(LoopControl::Stop);
-            return Ok(());
-        }
+    let state = app.state::<AppState>();
+    let mut guard = state.active.lock().await;
+    if let Some(active) = guard.take() {
+        let _ = active.control_tx.send(LoopControl::Stop);
+        Ok(())
+    } else {
+        Err("No active session".to_string())
     }
-    Err("No active session".to_string())
 }
 
 #[tauri::command]
