@@ -24,6 +24,7 @@ pub fn run() {
             commands::session::list_sessions,
             commands::chat::send_chat,
             commands::chat::send_signal,
+            commands::export::export_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useCanvasStore } from '../stores/canvasStore';
 import { useSessionStore } from '../stores/sessionStore';
 
@@ -8,27 +9,32 @@ export function ExportMenu() {
   const edges = useCanvasStore((s) => s.edges);
   const sessionName = useSessionStore((s) => s.sessionName);
 
-  const exportJSON = () => {
+  const slug = (sessionName || 'autoresearch').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+  const exportJSON = async () => {
     const data = {
       name: sessionName,
       exportedAt: new Date().toISOString(),
       nodes,
       edges,
     };
-    downloadFile(
-      `${sessionName || 'autoresearch'}-export.json`,
-      JSON.stringify(data, null, 2),
-      'application/json'
-    );
+    try {
+      const path = await invoke<string>('export_file', {
+        filename: `${slug}-export.json`,
+        content: JSON.stringify(data, null, 2),
+      });
+      alert(`Exported to ${path}`);
+    } catch (err) {
+      alert(`Export failed: ${err}`);
+    }
     setShow(false);
   };
 
-  const exportMarkdown = () => {
+  const exportMarkdown = async () => {
     let md = `# ${sessionName || 'Research'} — Export\n\n`;
     md += `**Exported:** ${new Date().toLocaleString()}\n`;
     md += `**Nodes:** ${nodes.length} | **Edges:** ${edges.length}\n\n---\n\n`;
 
-    // Group by type
     const byType = new Map<string, typeof nodes>();
     for (const node of nodes) {
       const list = byType.get(node.type) || [];
@@ -50,11 +56,15 @@ export function ExportMenu() {
       }
     }
 
-    downloadFile(
-      `${sessionName || 'autoresearch'}-report.md`,
-      md,
-      'text/markdown'
-    );
+    try {
+      const path = await invoke<string>('export_file', {
+        filename: `${slug}-report.md`,
+        content: md,
+      });
+      alert(`Exported to ${path}`);
+    } catch (err) {
+      alert(`Export failed: ${err}`);
+    }
     setShow(false);
   };
 
@@ -80,16 +90,6 @@ export function ExportMenu() {
       )}
     </div>
   );
-}
-
-function downloadFile(filename: string, content: string, type: string) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 const styles: Record<string, React.CSSProperties> = {
