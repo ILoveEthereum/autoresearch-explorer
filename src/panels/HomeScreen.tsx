@@ -3,11 +3,15 @@ import { invoke } from '@tauri-apps/api/core';
 import { useUiStore } from '../stores/uiStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useCanvasStore } from '../stores/canvasStore';
+import type { CanvasNode, CanvasEdge, CanvasCluster } from '../types/canvas';
 import type { SessionMeta } from '../types/session';
 
 export function HomeScreen() {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
   const sessionId = useSessionStore((s) => s.sessionId);
+  const setSession = useSessionStore((s) => s.setSession);
+  const setLoopCount = useSessionStore((s) => s.setLoopCount);
   const setShowTemplateSelector = useUiStore((s) => s.setShowTemplateSelector);
 
   useEffect(() => {
@@ -15,6 +19,58 @@ export function HomeScreen() {
       .then(setSessions)
       .catch(console.error);
   }, []);
+
+  const loadSession = async (session: SessionMeta) => {
+    setLoadingId(session.id);
+    try {
+      const state = await invoke<{
+        canvas: {
+          nodes: CanvasNode[];
+          edges: CanvasEdge[];
+          clusters: CanvasCluster[];
+        };
+        agent: { current_loop: number };
+      }>('load_session', { sessionId: session.id });
+
+      // Populate canvas store with saved state
+      useCanvasStore.setState({
+        nodes: state.canvas.nodes.map((n: any) => ({
+          id: n.id,
+          type: n.node_type || n.type,
+          title: n.title,
+          summary: n.summary || '',
+          status: n.status || 'completed',
+          fields: n.fields || {},
+          position: { x: 100 + Math.random() * 600, y: 100 + Math.random() * 400 },
+          pinned: false,
+          createdAt: n.created_at || new Date().toISOString(),
+          loopIndex: n.loop_index,
+        })),
+        edges: state.canvas.edges.map((e: any) => ({
+          id: e.id,
+          from: e.from,
+          to: e.to,
+          type: e.edge_type || e.type,
+          label: e.label,
+          style: e.style,
+        })),
+        clusters: state.canvas.clusters || [],
+        focusNodeId: null,
+      });
+
+      // Trigger layout
+      const store = useCanvasStore.getState();
+      store.applyOps([]);
+
+      setSession(session.id, session.name);
+      setLoopCount(state.agent.current_loop);
+    } catch (err) {
+      console.error('Failed to load session:', err);
+      alert(`Failed to load session: ${err}`);
+    } finally {
+      setLoadingId(null);
+    }
+  };
 
   // Don't show home screen if a session is active
   if (sessionId) return null;
@@ -37,9 +93,16 @@ export function HomeScreen() {
             <h2 style={styles.historyTitle}>Recent Sessions</h2>
             <div style={styles.sessionList}>
               {sessions.map((s) => (
-                <div key={s.id} style={styles.sessionCard}>
+                <button
+                  key={s.id}
+                  style={styles.sessionCard}
+                  onClick={() => loadSession(s)}
+                  disabled={loadingId === s.id}
+                >
                   <div style={styles.sessionInfo}>
-                    <div style={styles.sessionName}>{s.name}</div>
+                    <div style={styles.sessionName}>
+                      {loadingId === s.id ? 'Loading...' : s.name}
+                    </div>
                     <div style={styles.sessionMeta}>
                       {s.templateName} &middot; {s.totalLoops} loops &middot; {formatDate(s.lastModified)}
                     </div>
@@ -51,7 +114,7 @@ export function HomeScreen() {
                     }} />
                     {s.status}
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -138,11 +201,15 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    width: '100%',
     padding: '12px 16px',
     background: '#fff',
     border: '1px solid #e5e7eb',
     borderRadius: 10,
-    cursor: 'default',
+    cursor: 'pointer',
+    textAlign: 'left' as const,
+    transition: 'border-color 0.15s, box-shadow 0.15s',
+    fontFamily: 'inherit',
   },
   sessionInfo: {
     flex: 1,
