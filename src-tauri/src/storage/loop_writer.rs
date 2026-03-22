@@ -7,7 +7,7 @@ pub fn write_loop(
     session_dir: &Path,
     loop_index: u32,
     response: &AgentResponse,
-    _tool_results: &[String], // placeholder for future tool results
+    tool_results: &[String],
 ) -> Result<(), String> {
     let loop_dir = session_dir.join("loops").join(format!("{:03}", loop_index));
     std::fs::create_dir_all(&loop_dir)
@@ -24,19 +24,22 @@ pub fn write_loop(
         .map_err(|e| format!("Failed to write process.md: {}", e))?;
 
     // results.md — tool outputs and findings
-    let results = if response.tool_calls.is_empty() {
+    let results = if response.tool_calls.is_empty() && tool_results.is_empty() {
         format!(
             "# Loop {} — Results\n\nNo tools were called this loop.\n",
             loop_index
         )
     } else {
         let mut r = format!("# Loop {} — Results\n\n## Tool Calls\n\n", loop_index);
-        for tc in &response.tool_calls {
+        for (i, tc) in response.tool_calls.iter().enumerate() {
             r.push_str(&format!(
                 "### {}\n\n**Input:**\n```json\n{}\n```\n\n",
                 tc.tool,
                 serde_json::to_string_pretty(&tc.input).unwrap_or_default()
             ));
+            if let Some(result) = tool_results.get(i) {
+                r.push_str(&format!("**Output:**\n```\n{}\n```\n\n", result));
+            }
         }
         r
     };

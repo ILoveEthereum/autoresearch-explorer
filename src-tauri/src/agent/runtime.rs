@@ -10,6 +10,7 @@ use crate::llm::context;
 use crate::storage::{loop_writer, overview_writer, session_dir};
 use crate::storage::state_writer::{self, AgentState, LoopSummary, SessionState};
 use crate::template::types::ParsedTemplate;
+use crate::tools::registry::ToolRegistry;
 
 use super::signals::SignalQueue;
 
@@ -126,15 +127,70 @@ impl SessionRunner {
             "loop": loop_index
         }));
 
-        let (response, usage) = self.llm_client.call(&system_prompt, &user_message).await?;
+        let (mut response, usage) = self.llm_client.call(&system_prompt, &user_message).await?;
 
         tracing::info!(
-            "Loop {} complete. Plan: {}. Canvas ops: {}. Tokens: {:?}",
+            "Loop {} — Plan: {}. Tool calls: {}. Canvas ops: {}. Tokens: {:?}",
             loop_index,
             response.plan,
+            response.tool_calls.len(),
             response.canvas_operations.len(),
             usage.as_ref().map(|u| u.total_tokens)
         );
+
+        // Execute tools if any were called
+        let mut tool_results_text = Vec::new();
+        if !response.tool_calls.is_empty() {
+            let tool_registry = ToolRegistry::new(self.session_dir.clone());
+
+            for tc in &response.tool_calls {
+                let _ = app.emit("agent-status", serde_json::json!({
+                    "status": format!("executing_{}", tc.tool),
+                    "loop": loop_index,
+                    "tool": tc.tool
+                }));
+
+                tracing::info!("Executing tool: {}", tc.tool);
+                let result = tool_registry.execute(&tc.tool, &tc.input).await;
+                tracing::info!("Tool {} result: success={}, output_len={}", tc.tool, result.success, result.output.len());
+
+                tool_results_text.push(format!(
+                    "Tool: {}\nSuccess: {}\nOutput:\n{}\n{}",
+                    tc.tool,
+                    result.success,
+                    result.output,
+                    result.error.as_ref().map(|e| format!("Error: {}", e)).unwrap_or_default()
+                ));
+            }
+
+            // Second LLM call with tool results
+            let _ = app.emit("agent-status", serde_json::json!({
+                "status": "calling_llm",
+                "loop": loop_index,
+                "phase": "tool_results"
+            }));
+
+            let followup_message = format!(
+                "{}\n\n== TOOL RESULTS ==\n{}\n\nBased on these tool results, update the canvas with your findings. Create appropriate nodes and edges.",
+                user_message,
+                tool_results_text.join("\n---\n")
+            );
+
+            match self.llm_client.call(&system_prompt, &followup_message).await {
+                Ok((followup_response, _)) => {
+                    // Merge canvas operations from both calls
+                    response.canvas_operations.extend(followup_response.canvas_operations);
+                    response.reasoning = format!("{}\n\n[After tools]\n{}", response.reasoning, followup_response.reasoning);
+                    if followup_response.chat_message.is_some() {
+                        response.chat_message = followup_response.chat_message;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Second LLM call failed: {}", e);
+                    // Continue with the first response's canvas ops
+                }
+            }
+        }
 
         // Apply canvas operations
         self.canvas_state.apply_ops(&response.canvas_operations, loop_index);
@@ -147,7 +203,7 @@ impl SessionRunner {
             "status": "writing_loop",
             "loop": loop_index
         }));
-        loop_writer::write_loop(&self.session_dir, loop_index, &response, &[])?;
+        loop_writer::write_loop(&self.session_dir, loop_index, &response, &tool_results_text)?;
 
         // Update agent state
         self.agent_state.current_loop = loop_index;

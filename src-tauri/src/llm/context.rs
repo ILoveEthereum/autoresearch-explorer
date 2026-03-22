@@ -65,6 +65,14 @@ IMPORTANT:
 "#,
     );
 
+    // Tools
+    if !template.process.tools.is_empty() {
+        prompt.push_str("\n== AVAILABLE TOOLS ==\n");
+        prompt.push_str("You can call tools by including them in the tool_calls array.\n");
+        prompt.push_str(&crate::tools::registry::ToolRegistry::tool_descriptions(&template.process.tools));
+        prompt.push_str("\nIf you need information from the web, USE the web_search tool. Do not make up information.\n");
+    }
+
     // Agent instructions
     prompt.push_str("\n== AGENT INSTRUCTIONS ==\n");
     prompt.push_str(&template.instructions);

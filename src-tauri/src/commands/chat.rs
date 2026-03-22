@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
 use crate::agent::signals::HumanSignal;
