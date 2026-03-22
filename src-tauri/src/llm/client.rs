@@ -79,4 +79,48 @@ impl LlmClient {
 
         Ok((agent_response, completion.usage))
     }
+
+    /// Call the LLM and return the raw text response (no JSON parsing).
+    /// Used for overview generation and other freeform text tasks.
+    pub async fn call_raw(
+        &self,
+        system_prompt: &str,
+        user_message: &str,
+    ) -> Result<String, String> {
+        let request = serde_json::json!({
+            "model": self.model,
+            "messages": [
+                { "role": "system", "content": system_prompt },
+                { "role": "user", "content": user_message }
+            ],
+            "temperature": 0.7,
+            "max_tokens": 2048
+        });
+
+        let response = self
+            .http
+            .post(DEEPINFRA_URL)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("LLM API error ({}): {}", status, body));
+        }
+
+        let completion: ChatCompletionResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse LLM response: {}", e))?;
+
+        completion
+            .choices
+            .first()
+            .and_then(|c| c.message.content.clone())
+            .ok_or_else(|| "No content in LLM response".to_string())
+    }
 }
