@@ -36,6 +36,7 @@ pub async fn create_session(
     template_path: String,
     question: String,
     api_key: String,
+    model: Option<String>,
     app: AppHandle,
 ) -> Result<SessionMeta, String> {
     let template_path = PathBuf::from(&template_path);
@@ -44,7 +45,10 @@ pub async fn create_session(
     let (session_dir, meta) =
         session_dir::create_session_dir(&name, &template_path, &template.name)?;
 
-    let llm_client = LlmClient::new(api_key);
+    let mut llm_client = LlmClient::new(api_key);
+    if let Some(m) = model {
+        llm_client = llm_client.with_model(m);
+    }
     let signal_queue = Arc::new(SignalQueue::new());
     let (control_tx, control_rx) = watch::channel(LoopControl::Run);
 

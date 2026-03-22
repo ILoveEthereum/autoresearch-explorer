@@ -1,11 +1,10 @@
-import { useEffect } from 'react';
 import { CanvasView } from './canvas/CanvasView';
 import { SessionControls } from './panels/SessionControls';
 import { DetailPanel } from './panels/DetailPanel';
 import { ChatPanel } from './panels/ChatPanel';
 import { HistorySlider } from './panels/HistorySlider';
+import { HomeScreen } from './panels/HomeScreen';
 import { TemplateSelector } from './panels/TemplateSelector';
-import { useCanvasStore } from './stores/canvasStore';
 import { useUiStore } from './stores/uiStore';
 import { useSessionStore } from './stores/sessionStore';
 import { useTauriEvents } from './hooks/useTauriEvents';
@@ -15,28 +14,20 @@ function App() {
   const showDetailPanel = useUiStore((s) => s.showDetailPanel);
   const showTemplateSelector = useUiStore((s) => s.showTemplateSelector);
   const setShowTemplateSelector = useUiStore((s) => s.setShowTemplateSelector);
-  const addTestNodes = useCanvasStore((s) => s.addTestNodes);
   const sessionId = useSessionStore((s) => s.sessionId);
 
-  // Listen for Tauri backend events and keyboard shortcuts
   useTauriEvents();
   useKeyboard();
-
-  // Load test nodes only if no session is active
-  useEffect(() => {
-    if (!sessionId) {
-      addTestNodes();
-    }
-  }, [addTestNodes, sessionId]);
 
   return (
     <div style={styles.app}>
       <SessionControls />
       <div style={styles.main}>
-        <ChatPanel />
+        {sessionId && <ChatPanel />}
         <div style={styles.canvasContainer}>
           <CanvasView />
-          <HistorySlider />
+          {sessionId && <HistorySlider />}
+          {!sessionId && <HomeScreen />}
         </div>
         {showDetailPanel && <DetailPanel />}
       </div>

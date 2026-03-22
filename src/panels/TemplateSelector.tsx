@@ -13,10 +13,22 @@ export function TemplateSelector({ onClose }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [model, setModel] = useState('Qwen/Qwen2.5-72B-Instruct');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const setSession = useSessionStore((s) => s.setSession);
+
+  const MODELS = [
+    { id: 'Qwen/Qwen2.5-72B-Instruct', name: 'Qwen 2.5 72B Instruct' },
+    { id: 'Qwen/Qwen3-235B-A22B', name: 'Qwen 3 235B (MoE)' },
+    { id: 'deepseek-ai/DeepSeek-V3-0324', name: 'DeepSeek V3' },
+    { id: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct', name: 'Llama 4 Maverick 17B' },
+    { id: 'meta-llama/Meta-Llama-3.1-70B-Instruct', name: 'Llama 3.1 70B Instruct' },
+    { id: 'meta-llama/Meta-Llama-3.1-405B-Instruct', name: 'Llama 3.1 405B Instruct' },
+    { id: 'mistralai/Mistral-Small-24B-Instruct-2501', name: 'Mistral Small 24B' },
+    { id: 'google/gemma-3-27b-it', name: 'Gemma 3 27B' },
+  ];
 
   useEffect(() => {
     invoke<TemplateSummary[]>('list_templates')
@@ -31,6 +43,8 @@ export function TemplateSelector({ onClose }: Props) {
 
     const saved = localStorage.getItem('deepinfra_api_key');
     if (saved) setApiKey(saved);
+    const savedModel = localStorage.getItem('deepinfra_model');
+    if (savedModel) setModel(savedModel);
   }, []);
 
   const handleStart = async () => {
@@ -40,6 +54,7 @@ export function TemplateSelector({ onClose }: Props) {
     setError(null);
 
     localStorage.setItem('deepinfra_api_key', apiKey);
+    localStorage.setItem('deepinfra_model', model);
 
     useCanvasStore.getState().applyOps([]);
     useCanvasStore.setState({ nodes: [], edges: [], clusters: [], focusNodeId: null });
@@ -50,6 +65,7 @@ export function TemplateSelector({ onClose }: Props) {
         templatePath: selected,
         question: question,
         apiKey: apiKey,
+        model: model,
       });
 
       setSession(meta.id, meta.name);
@@ -107,6 +123,20 @@ export function TemplateSelector({ onClose }: Props) {
                 {templates.map((t) => (
                   <option key={t.path} value={t.path}>
                     {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ ...styles.field, flex: 1 }}>
+              <label style={styles.label}>Model</label>
+              <select
+                style={styles.select}
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              >
+                {MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
                   </option>
                 ))}
               </select>
