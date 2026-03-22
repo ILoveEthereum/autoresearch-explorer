@@ -20,3 +20,23 @@ body {
 button {
   font-family: inherit;
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Focus styles for form inputs */
+input:focus, textarea:focus, select:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+}
+
+/* Button hover states */
+button:hover:not(:disabled) {
+  filter: brightness(0.97);
+}

@@ -20,14 +20,15 @@ export function TemplateSelector({ onClose }: Props) {
 
   useEffect(() => {
     invoke<TemplateSummary[]>('list_templates')
-      .then(setTemplates)
+      .then((t) => {
+        setTemplates(t);
+        if (t.length > 0) setSelected(t[0].path);
+      })
       .catch((err) => {
         console.error('Failed to list templates:', err);
-        // Fallback to indicate no templates found
         setTemplates([]);
       });
 
-    // Try to load API key from localStorage
     const saved = localStorage.getItem('deepinfra_api_key');
     if (saved) setApiKey(saved);
   }, []);
@@ -38,10 +39,8 @@ export function TemplateSelector({ onClose }: Props) {
     setLoading(true);
     setError(null);
 
-    // Save API key for next time
     localStorage.setItem('deepinfra_api_key', apiKey);
 
-    // Clear existing test nodes
     useCanvasStore.getState().applyOps([]);
     useCanvasStore.setState({ nodes: [], edges: [], clusters: [], focusNodeId: null });
 
@@ -67,52 +66,82 @@ export function TemplateSelector({ onClose }: Props) {
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <h2 style={styles.title}>New Research Session</h2>
-        <p style={styles.subtitle}>Choose a template and enter your research question</p>
-
-        <div>
-          <label style={styles.label}>Template</label>
-          <select
-            style={styles.select}
-            value={selected || ''}
-            onChange={(e) => setSelected(e.target.value || null)}
-          >
-            <option value="">Select a template...</option>
-            {templates.map((t) => (
-              <option key={t.path} value={t.path}>
-                {t.name}{t.domain ? ` (${t.domain})` : ''}
-              </option>
-            ))}
-          </select>
+        {/* Header */}
+        <div style={styles.header}>
+          <div>
+            <h2 style={styles.title}>New Research Session</h2>
+            <p style={styles.subtitle}>Configure your research and let the agent explore</p>
+          </div>
+          <button style={styles.closeBtn} onClick={onClose}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M12 4L4 12M4 4l8 8" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
 
-        <div style={{ marginTop: 16 }}>
-          <label style={styles.label}>Research Question</label>
-          <textarea
-            style={styles.textarea}
-            placeholder="What would you like to research?"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            rows={3}
-          />
-        </div>
+        <div style={styles.divider} />
 
-        <div style={{ marginTop: 12 }}>
-          <label style={styles.label}>DeepInfra API Key</label>
-          <input
-            style={styles.input}
-            type="password"
-            placeholder="Enter your DeepInfra API key"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-          />
+        {/* Form */}
+        <div style={styles.form}>
+          <div style={styles.field}>
+            <label style={styles.label}>Research Question</label>
+            <textarea
+              style={styles.textarea}
+              placeholder="e.g. What are the latest advances in quantum error correction?"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              rows={3}
+              autoFocus
+            />
+          </div>
+
+          <div style={styles.row}>
+            <div style={{ ...styles.field, flex: 1 }}>
+              <label style={styles.label}>Template</label>
+              <select
+                style={styles.select}
+                value={selected || ''}
+                onChange={(e) => setSelected(e.target.value || null)}
+              >
+                <option value="">Select...</option>
+                {templates.map((t) => (
+                  <option key={t.path} value={t.path}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div style={styles.field}>
+            <label style={styles.label}>
+              DeepInfra API Key
+              {apiKey && <span style={styles.savedBadge}>saved</span>}
+            </label>
+            <input
+              style={styles.input}
+              type="password"
+              placeholder="Enter your API key"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+          </div>
         </div>
 
         {error && (
-          <div style={styles.error}>{error}</div>
+          <div style={styles.error}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0, marginTop: 1 }}>
+              <circle cx="7" cy="7" r="6" stroke="#dc2626" strokeWidth="1.2" />
+              <path d="M7 4v3.5M7 9.5v.01" stroke="#dc2626" strokeWidth="1.2" strokeLinecap="round" />
+            </svg>
+            <span>{error}</span>
+          </div>
         )}
 
-        <div style={styles.actions}>
+        <div style={styles.divider} />
+
+        {/* Footer */}
+        <div style={styles.footer}>
           <button style={styles.cancelBtn} onClick={onClose} disabled={loading}>
             Cancel
           </button>
@@ -124,7 +153,14 @@ export function TemplateSelector({ onClose }: Props) {
             disabled={!canStart}
             onClick={handleStart}
           >
-            {loading ? 'Starting...' : 'Start Session'}
+            {loading ? (
+              <span style={styles.loadingInner}>
+                <span style={styles.spinner} />
+                Starting...
+              </span>
+            ) : (
+              'Start Research'
+            )}
           </button>
         </div>
       </div>
@@ -136,7 +172,8 @@ const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'fixed',
     inset: 0,
-    background: 'rgba(0, 0, 0, 0.4)',
+    background: 'rgba(0, 0, 0, 0.5)',
+    backdropFilter: 'blur(4px)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -144,99 +181,170 @@ const styles: Record<string, React.CSSProperties> = {
   },
   modal: {
     background: '#fff',
-    borderRadius: 12,
-    padding: 24,
-    width: 480,
+    borderRadius: 16,
+    width: 500,
     maxHeight: '90vh',
     overflowY: 'auto' as const,
-    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15)',
+    boxShadow: '0 24px 80px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.05)',
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    padding: '24px 24px 0',
   },
   title: {
     margin: 0,
-    fontSize: 18,
-    fontWeight: 600,
+    fontSize: 20,
+    fontWeight: 700,
     color: '#111827',
+    letterSpacing: '-0.02em',
   },
   subtitle: {
-    margin: '4px 0 16px',
+    margin: '4px 0 0',
     fontSize: 13,
-    color: '#6b7280',
+    color: '#9ca3af',
+  },
+  closeBtn: {
+    border: 'none',
+    background: 'none',
+    cursor: 'pointer',
+    padding: 4,
+    borderRadius: 6,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  divider: {
+    height: 1,
+    background: '#f3f4f6',
+    margin: '16px 0',
+  },
+  form: {
+    padding: '0 24px',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 16,
+  },
+  field: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 6,
+  },
+  row: {
+    display: 'flex',
+    gap: 12,
+  },
+  label: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#374151',
+  },
+  savedBadge: {
+    fontSize: 10,
+    fontWeight: 500,
+    color: '#22c55e',
+    background: '#f0fdf4',
+    padding: '1px 6px',
+    borderRadius: 4,
   },
   select: {
     width: '100%',
-    padding: '8px 12px',
+    padding: '10px 12px',
     border: '1px solid #e5e7eb',
-    borderRadius: 6,
+    borderRadius: 8,
     fontSize: 13,
     fontFamily: 'inherit',
-    background: '#fff',
+    background: '#fafafa',
     color: '#111827',
     outline: 'none',
     cursor: 'pointer',
-    appearance: 'auto' as const,
-  },
-  label: {
-    display: 'block',
-    fontSize: 12,
-    fontWeight: 600,
-    color: '#374151',
-    marginBottom: 4,
+    transition: 'border-color 0.15s, box-shadow 0.15s',
   },
   textarea: {
     width: '100%',
-    padding: '8px 12px',
+    padding: '10px 12px',
     border: '1px solid #e5e7eb',
-    borderRadius: 6,
+    borderRadius: 8,
     fontSize: 13,
+    lineHeight: '1.5',
     fontFamily: 'inherit',
     resize: 'vertical' as const,
     outline: 'none',
+    background: '#fafafa',
+    transition: 'border-color 0.15s, box-shadow 0.15s',
   },
   input: {
     width: '100%',
-    padding: '8px 12px',
+    padding: '10px 12px',
     border: '1px solid #e5e7eb',
-    borderRadius: 6,
+    borderRadius: 8,
     fontSize: 13,
     fontFamily: 'inherit',
     outline: 'none',
+    background: '#fafafa',
+    transition: 'border-color 0.15s, box-shadow 0.15s',
   },
   error: {
-    marginTop: 12,
-    padding: '8px 12px',
+    margin: '0 24px',
+    padding: '10px 14px',
     background: '#fef2f2',
     border: '1px solid #fecaca',
-    borderRadius: 6,
+    borderRadius: 8,
     fontSize: 12,
     color: '#dc2626',
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 8,
+    lineHeight: '1.4',
   },
-  actions: {
+  footer: {
     display: 'flex',
     justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: 20,
+    gap: 10,
+    padding: '0 24px 24px',
   },
   cancelBtn: {
-    padding: '8px 16px',
+    padding: '10px 18px',
     border: '1px solid #e5e7eb',
-    borderRadius: 6,
+    borderRadius: 8,
     background: '#fff',
     cursor: 'pointer',
     fontSize: 13,
+    fontWeight: 500,
     color: '#374151',
+    transition: 'background 0.15s',
   },
   startBtn: {
-    padding: '8px 20px',
+    padding: '10px 24px',
     border: 'none',
-    borderRadius: 6,
-    background: '#3b82f6',
+    borderRadius: 8,
+    background: '#111827',
     color: '#fff',
     cursor: 'pointer',
     fontSize: 13,
     fontWeight: 600,
+    transition: 'background 0.15s',
   },
   startBtnDisabled: {
-    opacity: 0.5,
+    opacity: 0.4,
     cursor: 'not-allowed',
+  },
+  loadingInner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  spinner: {
+    width: 14,
+    height: 14,
+    border: '2px solid rgba(255,255,255,0.3)',
+    borderTopColor: '#fff',
+    borderRadius: '50%',
+    animation: 'spin 0.6s linear infinite',
+    display: 'inline-block',
   },
 };
