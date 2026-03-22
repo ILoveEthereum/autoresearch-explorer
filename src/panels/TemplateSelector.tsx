@@ -70,25 +70,20 @@ export function TemplateSelector({ onClose }: Props) {
         <h2 style={styles.title}>New Research Session</h2>
         <p style={styles.subtitle}>Choose a template and enter your research question</p>
 
-        <div style={styles.list}>
-          {templates.map((t) => (
-            <button
-              key={t.path}
-              style={{
-                ...styles.item,
-                ...(selected === t.path ? styles.itemSelected : {}),
-              }}
-              onClick={() => setSelected(t.path)}
-            >
-              <div style={styles.itemName}>{t.name}</div>
-              {t.domain && <div style={styles.itemDomain}>{t.domain}</div>}
-            </button>
-          ))}
-          {templates.length === 0 && (
-            <div style={{ fontSize: 13, color: '#9ca3af', padding: 12 }}>
-              No templates found. Check src-tauri/templates/
-            </div>
-          )}
+        <div>
+          <label style={styles.label}>Template</label>
+          <select
+            style={styles.select}
+            value={selected || ''}
+            onChange={(e) => setSelected(e.target.value || null)}
+          >
+            <option value="">Select a template...</option>
+            {templates.map((t) => (
+              <option key={t.path} value={t.path}>
+                {t.name}{t.domain ? ` (${t.domain})` : ''}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div style={{ marginTop: 16 }}>
@@ -167,35 +162,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     color: '#6b7280',
   },
-  list: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 8,
-  },
-  item: {
-    display: 'block',
+  select: {
     width: '100%',
-    padding: '12px 16px',
+    padding: '8px 12px',
     border: '1px solid #e5e7eb',
-    borderRadius: 8,
+    borderRadius: 6,
+    fontSize: 13,
+    fontFamily: 'inherit',
     background: '#fff',
-    cursor: 'pointer',
-    textAlign: 'left' as const,
-    transition: 'border-color 0.15s',
-  },
-  itemSelected: {
-    borderColor: '#3b82f6',
-    background: '#eff6ff',
-  },
-  itemName: {
-    fontSize: 14,
-    fontWeight: 600,
     color: '#111827',
-  },
-  itemDomain: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginTop: 2,
+    outline: 'none',
+    cursor: 'pointer',
+    appearance: 'auto' as const,
   },
   label: {
     display: 'block',
