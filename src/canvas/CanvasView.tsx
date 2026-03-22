@@ -15,6 +15,7 @@ export function CanvasView() {
 
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
+  const clusters = useCanvasStore((s) => s.clusters);
   const viewport = useCanvasStore((s) => s.viewport);
   const focusNodeId = useCanvasStore((s) => s.focusNodeId);
   const setViewport = useCanvasStore((s) => s.setViewport);
@@ -52,8 +53,8 @@ export function CanvasView() {
     const w = canvas.width / (window.devicePixelRatio || 1);
     const h = canvas.height / (window.devicePixelRatio || 1);
 
-    render(ctx, w, h, nodes, edges, viewport, focusNodeId, selectedNodeId);
-  }, [nodes, edges, viewport, focusNodeId, selectedNodeId, resizeCanvas]);
+    render(ctx, w, h, nodes, edges, clusters, viewport, focusNodeId, selectedNodeId);
+  }, [nodes, edges, clusters, viewport, focusNodeId, selectedNodeId, resizeCanvas]);
 
   // Window resize
   useEffect(() => {

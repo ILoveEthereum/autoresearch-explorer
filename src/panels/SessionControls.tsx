@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useUiStore } from '../stores/uiStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { ExportMenu } from './ExportMenu';
 
 const STATUS_LABELS: Record<string, string> = {
   idle: 'Idle',
@@ -82,6 +83,7 @@ export function SessionControls() {
             </button>
           </>
         )}
+        <ExportMenu />
         <button style={styles.btn} onClick={() => setShowTemplateSelector(true)}>
           New Session
         </button>

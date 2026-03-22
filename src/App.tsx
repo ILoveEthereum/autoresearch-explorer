@@ -3,11 +3,13 @@ import { CanvasView } from './canvas/CanvasView';
 import { SessionControls } from './panels/SessionControls';
 import { DetailPanel } from './panels/DetailPanel';
 import { ChatPanel } from './panels/ChatPanel';
+import { HistorySlider } from './panels/HistorySlider';
 import { TemplateSelector } from './panels/TemplateSelector';
 import { useCanvasStore } from './stores/canvasStore';
 import { useUiStore } from './stores/uiStore';
 import { useSessionStore } from './stores/sessionStore';
 import { useTauriEvents } from './hooks/useTauriEvents';
+import { useKeyboard } from './hooks/useKeyboard';
 
 function App() {
   const showDetailPanel = useUiStore((s) => s.showDetailPanel);
@@ -16,8 +18,9 @@ function App() {
   const addTestNodes = useCanvasStore((s) => s.addTestNodes);
   const sessionId = useSessionStore((s) => s.sessionId);
 
-  // Listen for Tauri backend events
+  // Listen for Tauri backend events and keyboard shortcuts
   useTauriEvents();
+  useKeyboard();
 
   // Load test nodes only if no session is active
   useEffect(() => {
@@ -33,6 +36,7 @@ function App() {
         <ChatPanel />
         <div style={styles.canvasContainer}>
           <CanvasView />
+          <HistorySlider />
         </div>
         {showDetailPanel && <DetailPanel />}
       </div>

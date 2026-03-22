@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { CanvasNode, CanvasEdge, CanvasCluster, Viewport, CanvasOp } from '../types/canvas';
-import { runDagreLayout } from '../canvas/layout/dagreLayout';
+import { runLayout, type LayoutMode } from '../canvas/layout/layoutEngine';
 
 interface CanvasState {
   nodes: CanvasNode[];
@@ -8,8 +8,10 @@ interface CanvasState {
   clusters: CanvasCluster[];
   viewport: Viewport;
   focusNodeId: string | null;
+  layoutMode: LayoutMode;
 
   setViewport: (viewport: Partial<Viewport>) => void;
+  setLayoutMode: (mode: LayoutMode) => void;
   applyOps: (ops: CanvasOp[]) => void;
   addTestNodes: () => void;
 }
@@ -20,9 +22,12 @@ export const useCanvasStore = create<CanvasState>((set) => ({
   clusters: [],
   viewport: { x: 0, y: 0, zoom: 1 },
   focusNodeId: null,
+  layoutMode: 'left_to_right',
 
   setViewport: (partial) =>
     set((state) => ({ viewport: { ...state.viewport, ...partial } })),
+
+  setLayoutMode: (mode) => set({ layoutMode: mode }),
 
   applyOps: (ops) =>
     set((state) => {
@@ -86,7 +91,7 @@ export const useCanvasStore = create<CanvasState>((set) => ({
 
       // Run layout on unpinned nodes
       if (nodes.some((n) => !n.pinned)) {
-        const positions = runDagreLayout(nodes, edges, 'LR');
+        const positions = runLayout(nodes, edges, state.layoutMode);
         nodes = nodes.map((n) => {
           if (n.pinned) return n;
           const pos = positions.get(n.id);

@@ -127,6 +127,24 @@ pub async fn stop_session(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Load a saved session's canvas state (for viewing, not resuming the loop).
+#[tauri::command]
+pub fn load_session(session_id: String) -> Result<serde_json::Value, String> {
+    let session_dir = session_dir::research_dir().join(&session_id);
+    let state_path = session_dir.join("state.json");
+
+    if !state_path.exists() {
+        return Err(format!("Session state not found: {}", session_id));
+    }
+
+    let state_str = std::fs::read_to_string(&state_path)
+        .map_err(|e| format!("Failed to read state.json: {}", e))?;
+    let state: serde_json::Value = serde_json::from_str(&state_str)
+        .map_err(|e| format!("Failed to parse state.json: {}", e))?;
+
+    Ok(state)
+}
+
 #[tauri::command]
 pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
     let research = session_dir::research_dir();

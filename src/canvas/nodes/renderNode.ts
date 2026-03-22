@@ -1,4 +1,5 @@
 import type { CanvasNode } from '../../types/canvas';
+import type { DetailLevel } from '../semanticZoom';
 import { NODE_COLORS, TEXT_PRIMARY, TEXT_SECONDARY, FOCUS_COLOR, SELECTION_COLOR } from './nodeColors';
 import { drawRoundedRect, drawDiamond, drawHighlightedBox, drawDashedBox } from './shapes';
 
@@ -29,10 +30,25 @@ export function renderNode(
   ctx: CanvasRenderingContext2D,
   node: CanvasNode,
   isFocused: boolean,
-  isSelected: boolean
+  isSelected: boolean,
+  detailLevel: DetailLevel = 'close'
 ) {
   const colors = NODE_COLORS[node.status] || NODE_COLORS.queued;
   const bounds = getNodeBounds(node);
+
+  // Far zoom: just a colored dot
+  if (detailLevel === 'far') {
+    ctx.beginPath();
+    ctx.arc(node.position.x, node.position.y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = colors.border;
+    ctx.fill();
+    if (isFocused) {
+      ctx.strokeStyle = FOCUS_COLOR;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    return;
+  }
 
   // Focus glow
   if (isFocused) {
@@ -89,7 +105,7 @@ export function renderNode(
   }
 
   // Text
-  drawNodeText(ctx, node, bounds, shape);
+  drawNodeText(ctx, node, bounds, shape, detailLevel);
 }
 
 function getShape(node: CanvasNode): string {
@@ -105,7 +121,8 @@ function drawNodeText(
   ctx: CanvasRenderingContext2D,
   node: CanvasNode,
   bounds: { x: number; y: number; w: number; h: number },
-  shape: string
+  shape: string,
+  detailLevel: DetailLevel = 'close'
 ) {
   ctx.save();
   ctx.textAlign = 'center';
@@ -124,18 +141,20 @@ function drawNodeText(
     const titleY = bounds.y + 20;
     ctx.fillText(truncate(node.title, 30), bounds.x + bounds.w / 2, titleY);
 
-    // Summary (if room)
-    if (node.summary && bounds.h > NODE_BASE_HEIGHT) {
+    // Summary (if room and close zoom)
+    if (node.summary && bounds.h > NODE_BASE_HEIGHT && detailLevel === 'close') {
       ctx.font = '400 11px system-ui, -apple-system, sans-serif';
       ctx.fillStyle = TEXT_SECONDARY;
       ctx.fillText(truncate(node.summary, 40), bounds.x + bounds.w / 2, titleY + 20);
     }
 
-    // Status badge
-    ctx.font = '500 9px system-ui, -apple-system, sans-serif';
-    ctx.fillStyle = TEXT_SECONDARY;
-    ctx.textAlign = 'right';
-    ctx.fillText(node.status.toUpperCase(), bounds.x + bounds.w - 8, bounds.y + bounds.h - 8);
+    // Status badge (close zoom only)
+    if (detailLevel === 'close') {
+      ctx.font = '500 9px system-ui, -apple-system, sans-serif';
+      ctx.fillStyle = TEXT_SECONDARY;
+      ctx.textAlign = 'right';
+      ctx.fillText(node.status.toUpperCase(), bounds.x + bounds.w - 8, bounds.y + bounds.h - 8);
+    }
   }
 
   ctx.restore();
