@@ -15,6 +15,9 @@ pub fn run() {
             commands::template::list_templates,
             commands::template::parse_template,
             commands::session::create_session,
+            commands::session::pause_session,
+            commands::session::resume_session,
+            commands::session::stop_session,
             commands::session::list_sessions,
         ])
         .run(tauri::generate_context!())

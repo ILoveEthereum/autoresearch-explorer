@@ -1,3 +1,4 @@
+use crate::agent::signals::HumanSignal;
 use crate::canvas::state::CanvasState;
 use crate::storage::state_writer::AgentState;
 use crate::template::types::ParsedTemplate;
@@ -77,10 +78,51 @@ pub fn build_user_message(
     agent: &AgentState,
     question: &str,
 ) -> String {
+    build_user_message_with_signals(canvas, agent, question, &[])
+}
+
+/// Build the user message with human signals included.
+pub fn build_user_message_with_signals(
+    canvas: &CanvasState,
+    agent: &AgentState,
+    question: &str,
+    signals: &[HumanSignal],
+) -> String {
     let mut msg = String::new();
 
     // Research question
     msg.push_str(&format!("== RESEARCH QUESTION ==\n{}\n\n", question));
+
+    // Human signals
+    if !signals.is_empty() {
+        msg.push_str("== HUMAN SIGNALS (respond to these) ==\n");
+        for signal in signals {
+            match signal {
+                HumanSignal::Chat { text, referenced_nodes } => {
+                    msg.push_str(&format!("CHAT: \"{}\"\n", text));
+                    if !referenced_nodes.is_empty() {
+                        msg.push_str(&format!("  Referenced nodes: {}\n", referenced_nodes.join(", ")));
+                    }
+                }
+                HumanSignal::Prioritize { node_id } => {
+                    msg.push_str(&format!("PRIORITIZE: Focus more on node \"{}\"\n", node_id));
+                }
+                HumanSignal::Deprioritize { node_id } => {
+                    msg.push_str(&format!("DEPRIORITIZE: Stop exploring node \"{}\"\n", node_id));
+                }
+                HumanSignal::Challenge { node_id } => {
+                    msg.push_str(&format!("CHALLENGE: Re-examine node \"{}\" — the human thinks it may be wrong\n", node_id));
+                }
+                HumanSignal::Annotate { text, near_node_id } => {
+                    msg.push_str(&format!("ANNOTATE near \"{}\": \"{}\"\n", near_node_id, text));
+                }
+                HumanSignal::Investigate { from_id, to_id } => {
+                    msg.push_str(&format!("INVESTIGATE: Look into the relationship between \"{}\" and \"{}\"\n", from_id, to_id));
+                }
+            }
+        }
+        msg.push('\n');
+    }
 
     // Current canvas state
     msg.push_str("== CURRENT CANVAS STATE ==\n");

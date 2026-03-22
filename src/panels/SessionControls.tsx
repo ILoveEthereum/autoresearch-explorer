@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { useUiStore } from '../stores/uiStore';
 import { useSessionStore } from '../stores/sessionStore';
 
@@ -6,7 +7,10 @@ const STATUS_LABELS: Record<string, string> = {
   building_context: 'Building context...',
   calling_llm: 'Calling LLM...',
   writing_loop: 'Writing results...',
+  updating_overview: 'Updating overview...',
+  paused: 'Paused',
   stopped: 'Stopped',
+  error: 'Error — check logs',
 };
 
 export function SessionControls() {
@@ -15,6 +19,14 @@ export function SessionControls() {
   const status = useSessionStore((s) => s.status);
   const loopCount = useSessionStore((s) => s.loopCount);
   const isRunning = useSessionStore((s) => s.isRunning);
+
+  const isPaused = status === 'paused';
+  const isStopped = status === 'stopped';
+  const isActive = sessionName && !isStopped;
+
+  const handlePause = () => invoke('pause_session').catch(console.error);
+  const handleResume = () => invoke('resume_session').catch(console.error);
+  const handleStop = () => invoke('stop_session').catch(console.error);
 
   return (
     <div style={styles.bar}>
@@ -27,10 +39,14 @@ export function SessionControls() {
           </>
         )}
       </div>
+
       <div style={styles.center}>
-        {isRunning && (
+        {isActive && (
           <span style={styles.status}>
-            <span style={styles.dot} />
+            {!isPaused && !isStopped && status !== 'idle' && status !== 'error' && (
+              <span style={styles.dot} />
+            )}
+            {isPaused && <span style={styles.pauseIcon}>||</span>}
             {STATUS_LABELS[status] || status}
           </span>
         )}
@@ -38,7 +54,34 @@ export function SessionControls() {
           <span style={styles.loopBadge}>Loop {loopCount}</span>
         )}
       </div>
+
       <div style={styles.right}>
+        {isActive && (
+          <>
+            {isPaused ? (
+              <button style={styles.controlBtn} onClick={handleResume} title="Resume">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 2l9 5-9 5V2z" fill="#22c55e" />
+                </svg>
+                Resume
+              </button>
+            ) : (
+              <button style={styles.controlBtn} onClick={handlePause} title="Pause">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <rect x="3" y="2" width="3" height="10" rx="0.5" fill="#f59e0b" />
+                  <rect x="8" y="2" width="3" height="10" rx="0.5" fill="#f59e0b" />
+                </svg>
+                Pause
+              </button>
+            )}
+            <button style={{ ...styles.controlBtn, ...styles.stopBtn }} onClick={handleStop} title="Stop">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <rect x="3" y="3" width="8" height="8" rx="1" fill="#ef4444" />
+              </svg>
+              Stop
+            </button>
+          </>
+        )}
         <button style={styles.btn} onClick={() => setShowTemplateSelector(true)}>
           New Session
         </button>
@@ -62,6 +105,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
+    minWidth: 0,
   },
   logo: {
     fontSize: 15,
@@ -77,6 +121,10 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     color: '#6b7280',
     fontWeight: 500,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+    maxWidth: 200,
   },
   center: {
     display: 'flex',
@@ -97,6 +145,12 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#22c55e',
     animation: 'pulse 1.5s ease-in-out infinite',
   },
+  pauseIcon: {
+    fontSize: 10,
+    fontWeight: 800,
+    color: '#f59e0b',
+    letterSpacing: 1,
+  },
   loopBadge: {
     fontSize: 11,
     fontWeight: 600,
@@ -109,6 +163,22 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
+  },
+  controlBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+    padding: '5px 10px',
+    border: '1px solid #e5e7eb',
+    borderRadius: 6,
+    background: '#fff',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 500,
+    color: '#374151',
+  },
+  stopBtn: {
+    borderColor: '#fecaca',
   },
   btn: {
     padding: '6px 14px',
