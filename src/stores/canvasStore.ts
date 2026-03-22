@@ -12,6 +12,7 @@ interface CanvasState {
 
   setViewport: (viewport: Partial<Viewport>) => void;
   setLayoutMode: (mode: LayoutMode) => void;
+  centerOnNodes: () => void;
   applyOps: (ops: CanvasOp[]) => void;
   addTestNodes: () => void;
 }
@@ -28,6 +29,25 @@ export const useCanvasStore = create<CanvasState>((set) => ({
     set((state) => ({ viewport: { ...state.viewport, ...partial } })),
 
   setLayoutMode: (mode) => set({ layoutMode: mode }),
+
+  centerOnNodes: () =>
+    set((state) => {
+      if (state.nodes.length === 0) return {};
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const node of state.nodes) {
+        minX = Math.min(minX, node.position.x);
+        minY = Math.min(minY, node.position.y);
+        maxX = Math.max(maxX, node.position.x);
+        maxY = Math.max(maxY, node.position.y);
+      }
+      return {
+        viewport: {
+          x: (minX + maxX) / 2,
+          y: (minY + maxY) / 2,
+          zoom: Math.min(1, 800 / Math.max(maxX - minX + 200, maxY - minY + 200, 1)),
+        },
+      };
+    }),
 
   applyOps: (ops) =>
     set((state) => {

@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useUiStore } from '../stores/uiStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useCanvasStore } from '../stores/canvasStore';
+import { useChatStore } from '../stores/chatStore';
 import { ExportMenu } from './ExportMenu';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -25,14 +27,30 @@ export function SessionControls() {
   const isStopped = status === 'stopped';
   const isActive = sessionName && !isStopped;
 
+  const clearSession = useSessionStore((s) => s.clearSession);
+
   const handlePause = () => invoke('pause_session').catch(console.error);
   const handleResume = () => invoke('resume_session').catch(console.error);
   const handleStop = () => invoke('stop_session').catch(console.error);
 
+  const handleGoHome = () => {
+    // Stop the active session if running
+    if (isActive && !isStopped) {
+      invoke('stop_session').catch(console.error);
+    }
+    // Clear all state
+    clearSession();
+    useCanvasStore.setState({ nodes: [], edges: [], clusters: [], focusNodeId: null });
+    useChatStore.getState().clearMessages();
+    useUiStore.getState().selectNode(null);
+  };
+
   return (
     <div style={styles.bar}>
       <div style={styles.left}>
-        <span style={styles.logo}>Autoresearch</span>
+        <button style={styles.logoBtn} onClick={handleGoHome} title="Back to home">
+          Autoresearch
+        </button>
         {sessionName && (
           <>
             <span style={styles.sep}>/</span>
@@ -109,11 +127,16 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     minWidth: 0,
   },
-  logo: {
+  logoBtn: {
     fontSize: 15,
     fontWeight: 700,
     color: '#111827',
     letterSpacing: '-0.02em',
+    border: 'none',
+    background: 'none',
+    cursor: 'pointer',
+    padding: 0,
+    fontFamily: 'inherit',
   },
   sep: {
     color: '#d1d5db',

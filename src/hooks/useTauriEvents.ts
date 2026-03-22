@@ -39,9 +39,16 @@ export function useTauriEvents() {
     const unlisteners: (() => void)[] = [];
     let cancelled = false;
 
+    let isFirstOps = true;
+
     async function setup() {
       const u1 = await listenWithRetry<CanvasOp[]>('canvas-ops', (event) => {
         applyOps(event.payload);
+        // Center on first batch of ops for this session
+        if (isFirstOps) {
+          isFirstOps = false;
+          setTimeout(() => useCanvasStore.getState().centerOnNodes(), 100);
+        }
       });
       if (!cancelled) unlisteners.push(u1);
 

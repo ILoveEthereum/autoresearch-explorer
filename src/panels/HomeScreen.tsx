@@ -58,9 +58,10 @@ export function HomeScreen() {
         focusNodeId: null,
       });
 
-      // Trigger layout
+      // Trigger layout and center
       const store = useCanvasStore.getState();
       store.applyOps([]);
+      setTimeout(() => useCanvasStore.getState().centerOnNodes(), 100);
 
       setSession(session.id, session.name);
       setLoopCount(state.agent.current_loop);
