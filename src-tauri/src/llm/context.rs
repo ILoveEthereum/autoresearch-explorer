@@ -39,6 +39,12 @@ pub fn build_system_prompt(template: &ParsedTemplate) -> String {
         ));
     }
 
+    // Tools — placed BEFORE output format so the LLM sees them as primary
+    if !template.process.tools.is_empty() {
+        prompt.push_str("\n== AVAILABLE TOOLS ==\n");
+        prompt.push_str(&crate::tools::registry::ToolRegistry::tool_descriptions(&template.process.tools));
+    }
+
     // Output format
     prompt.push_str("\n== OUTPUT FORMAT ==\n");
     prompt.push_str(
@@ -46,7 +52,10 @@ pub fn build_system_prompt(template: &ParsedTemplate) -> String {
 {
   "reasoning": "Your internal thinking about what to do this loop",
   "plan": "A one-sentence summary of this loop iteration's action",
-  "tool_calls": [],
+  "tool_calls": [
+    {"tool": "web_search", "input": {"query": "your search query", "max_results": 5}},
+    {"tool": "web_read", "input": {"url": "https://example.com/article"}}
+  ],
   "canvas_operations": [
     {"op": "ADD_NODE", "node": {"id": "unique-id", "type": "node_type_from_schema", "title": "...", "summary": "...", "status": "active|completed|queued", "fields": {...}}},
     {"op": "ADD_EDGE", "edge": {"id": "edge-id", "from": "node-id", "to": "node-id", "type": "edge_type_from_schema", "label": "optional"}},
@@ -56,22 +65,19 @@ pub fn build_system_prompt(template: &ParsedTemplate) -> String {
   "chat_message": "optional message to the human, or null"
 }
 
-IMPORTANT:
-- Every node MUST have a unique id (use descriptive ids like "q-main", "src-001", "f-001")
-- Node type MUST match one of the types defined in the canvas schema
-- Edge type MUST match one of the edge types defined in the canvas schema
-- Use ADD_NODE to create new nodes, UPDATE_NODE to modify existing ones
-- Use SET_FOCUS to highlight what you're currently working on
+CRITICAL RULES:
+1. You MUST use tools to gather real information. DO NOT fabricate results, URLs, data, or metrics.
+2. On your FIRST loop, use web_search to find real sources about the topic.
+3. After getting search results, use web_read to read the most relevant URLs.
+4. NEVER create "source" nodes with made-up URLs or summaries. Only create source nodes AFTER you have actually read the source using web_read.
+5. NEVER report experiment results or metrics unless you ran actual code using code_executor.
+6. If you have web_search available, you MUST call it at least once every 2 loops.
+7. Every node MUST have a unique id (use descriptive ids like "q-main", "src-001", "f-001").
+8. Node type MUST match one of the types defined in the canvas schema.
+9. Use SET_FOCUS to highlight what you're currently working on.
+10. If no tools are needed this loop (e.g., you're synthesizing), set tool_calls to an empty array [].
 "#,
     );
-
-    // Tools
-    if !template.process.tools.is_empty() {
-        prompt.push_str("\n== AVAILABLE TOOLS ==\n");
-        prompt.push_str("You can call tools by including them in the tool_calls array.\n");
-        prompt.push_str(&crate::tools::registry::ToolRegistry::tool_descriptions(&template.process.tools));
-        prompt.push_str("\nIf you need information from the web, USE the web_search tool. Do not make up information.\n");
-    }
 
     // Agent instructions
     prompt.push_str("\n== AGENT INSTRUCTIONS ==\n");
