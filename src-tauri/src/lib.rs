@@ -21,6 +21,7 @@ pub fn run() {
             commands::session::resume_session,
             commands::session::stop_session,
             commands::session::load_session,
+            commands::session::get_loop_ops,
             commands::session::list_sessions,
             commands::chat::send_chat,
             commands::chat::send_signal,

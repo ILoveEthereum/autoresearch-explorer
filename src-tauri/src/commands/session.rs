@@ -131,6 +131,24 @@ pub async fn stop_session(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Get canvas operations for a specific loop.
+#[tauri::command]
+pub fn get_loop_ops(session_id: String, loop_index: u32) -> Result<serde_json::Value, String> {
+    let session_dir = session_dir::research_dir().join(&session_id);
+    let ops_path = session_dir.join("loops").join(format!("{:03}", loop_index)).join("canvas-ops.json");
+
+    if !ops_path.exists() {
+        return Ok(serde_json::json!([]));
+    }
+
+    let ops_str = std::fs::read_to_string(&ops_path)
+        .map_err(|e| format!("Failed to read canvas-ops.json: {}", e))?;
+    let ops: serde_json::Value = serde_json::from_str(&ops_str)
+        .map_err(|e| format!("Failed to parse canvas-ops.json: {}", e))?;
+
+    Ok(ops)
+}
+
 /// Load a saved session's canvas state (for viewing, not resuming the loop).
 #[tauri::command]
 pub fn load_session(session_id: String) -> Result<serde_json::Value, String> {
