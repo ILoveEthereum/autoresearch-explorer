@@ -4,6 +4,30 @@ import { useCanvasStore } from '../stores/canvasStore';
 import { useSessionStore } from '../stores/sessionStore';
 import type { CanvasOp } from '../types/canvas';
 
+/**
+ * Retry listen with exponential backoff.
+ * Tauri 2 may reject listen() if the backend isn't ready yet.
+ */
+async function listenWithRetry<T>(
+  event: string,
+  handler: (event: { payload: T }) => void,
+  maxRetries = 10,
+  delay = 200
+): Promise<() => void> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await listen<T>(event, handler);
+    } catch {
+      if (i === maxRetries - 1) {
+        console.warn(`Failed to listen for "${event}" after ${maxRetries} retries`);
+        return () => {};
+      }
+      await new Promise((r) => setTimeout(r, delay * (i + 1)));
+    }
+  }
+  return () => {};
+}
+
 export function useTauriEvents() {
   const applyOps = useCanvasStore((s) => s.applyOps);
   const setStatus = useSessionStore((s) => s.setStatus);
@@ -11,24 +35,39 @@ export function useTauriEvents() {
 
   useEffect(() => {
     const unlisteners: (() => void)[] = [];
+    let cancelled = false;
 
-    listen<CanvasOp[]>('canvas-ops', (event) => {
-      applyOps(event.payload);
-    }).then((u) => unlisteners.push(u));
+    async function setup() {
+      const u1 = await listenWithRetry<CanvasOp[]>('canvas-ops', (event) => {
+        applyOps(event.payload);
+      });
+      if (!cancelled) unlisteners.push(u1);
 
-    listen<{ status: string; loop: number }>('agent-status', (event) => {
-      setStatus(event.payload.status);
-    }).then((u) => unlisteners.push(u));
+      const u2 = await listenWithRetry<{ status: string; loop: number }>('agent-status', (event) => {
+        setStatus(event.payload.status);
+      });
+      if (!cancelled) unlisteners.push(u2);
 
-    listen<{ loop: number; plan: string }>('loop-completed', (event) => {
-      setLoopCount(event.payload.loop);
-    }).then((u) => unlisteners.push(u));
+      const u3 = await listenWithRetry<{ loop: number; plan: string }>('loop-completed', (event) => {
+        setLoopCount(event.payload.loop);
+      });
+      if (!cancelled) unlisteners.push(u3);
 
-    listen<{ from: string; text: string }>('chat-message', (event) => {
-      console.log('[Agent]', event.payload.text);
-    }).then((u) => unlisteners.push(u));
+      const u4 = await listenWithRetry<{ from: string; text: string }>('chat-message', (event) => {
+        console.log('[Agent]', event.payload.text);
+      });
+      if (!cancelled) unlisteners.push(u4);
+
+      const u5 = await listenWithRetry<{ error: string }>('session-error', (event) => {
+        console.error('[Session Error]', event.payload.error);
+      });
+      if (!cancelled) unlisteners.push(u5);
+    }
+
+    setup();
 
     return () => {
+      cancelled = true;
       unlisteners.forEach((u) => u());
     };
   }, [applyOps, setStatus, setLoopCount]);

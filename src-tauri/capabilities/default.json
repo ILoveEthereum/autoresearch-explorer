@@ -3,10 +3,7 @@
   "description": "Default capabilities for Autoresearch",
   "windows": ["main"],
   "permissions": [
-    "core:event:allow-listen",
-    "core:event:allow-emit",
-    "core:event:allow-emit-to",
-    "core:event:allow-unlisten",
+    "core:default",
     "shell:allow-open"
   ]
 }
