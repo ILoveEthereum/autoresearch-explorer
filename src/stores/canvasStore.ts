@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { CanvasNode, CanvasEdge, CanvasCluster, Viewport, CanvasOp } from '../types/canvas';
+import { runDagreLayout } from '../canvas/layout/dagreLayout';
 
 interface CanvasState {
   nodes: CanvasNode[];
@@ -74,6 +75,16 @@ export const useCanvasStore = create<CanvasState>((set) => ({
           case 'SNAPSHOT':
             break;
         }
+      }
+
+      // Run layout on unpinned nodes
+      if (nodes.some((n) => !n.pinned)) {
+        const positions = runDagreLayout(nodes, edges, 'LR');
+        nodes = nodes.map((n) => {
+          if (n.pinned) return n;
+          const pos = positions.get(n.id);
+          return pos ? { ...n, position: pos } : n;
+        });
       }
 
       return { nodes, edges, clusters, focusNodeId };

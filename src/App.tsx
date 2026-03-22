@@ -5,17 +5,25 @@ import { DetailPanel } from './panels/DetailPanel';
 import { TemplateSelector } from './panels/TemplateSelector';
 import { useCanvasStore } from './stores/canvasStore';
 import { useUiStore } from './stores/uiStore';
+import { useSessionStore } from './stores/sessionStore';
+import { useTauriEvents } from './hooks/useTauriEvents';
 
 function App() {
   const showDetailPanel = useUiStore((s) => s.showDetailPanel);
   const showTemplateSelector = useUiStore((s) => s.showTemplateSelector);
   const setShowTemplateSelector = useUiStore((s) => s.setShowTemplateSelector);
   const addTestNodes = useCanvasStore((s) => s.addTestNodes);
+  const sessionId = useSessionStore((s) => s.sessionId);
 
-  // Load test nodes on first render
+  // Listen for Tauri backend events
+  useTauriEvents();
+
+  // Load test nodes only if no session is active
   useEffect(() => {
-    addTestNodes();
-  }, [addTestNodes]);
+    if (!sessionId) {
+      addTestNodes();
+    }
+  }, [addTestNodes, sessionId]);
 
   return (
     <div style={styles.app}>
