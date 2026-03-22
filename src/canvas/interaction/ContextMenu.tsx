@@ -1,4 +1,4 @@
-import { handleSignal } from './contextMenu';
+import { handleSignal } from './signalActions';
 
 interface Props {
   x: number;
