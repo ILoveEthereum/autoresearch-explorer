@@ -53,7 +53,7 @@ pub fn write_loop(
             CanvasOp::ADD_NODE { node } => {
                 explanation.push_str(&format!(
                     "- Added node `{}` ({}): \"{}\"\n",
-                    node.id, node.node_type, node.title
+                    node.id, node.node_type, node.display_title()
                 ));
             }
             CanvasOp::ADD_EDGE { edge } => {

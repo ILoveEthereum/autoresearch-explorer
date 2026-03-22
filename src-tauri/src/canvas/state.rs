@@ -45,8 +45,8 @@ impl CanvasState {
                 let stored = StoredNode {
                     id: node.id.clone(),
                     node_type: node.node_type.clone(),
-                    title: node.title.clone(),
-                    summary: node.summary.clone(),
+                    title: node.display_title(),
+                    summary: node.display_summary(),
                     status: node.status.clone(),
                     fields: node.fields.clone(),
                     cluster: node.position_hint.as_ref().and_then(|h| h.cluster.clone()),

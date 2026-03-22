@@ -35,10 +35,17 @@ export const useCanvasStore = create<CanvasState>((set) => ({
         switch (op.op) {
           case 'ADD_NODE': {
             const { position_hint, ...rest } = op.node;
+            const raw = rest as Record<string, unknown>;
             const newNode: CanvasNode = {
-              ...rest,
+              id: String(raw.id || `node-${nodes.length}`),
+              type: String(raw.type || 'source'),
+              title: String(raw.title || raw.text || raw.name || raw.id || 'Untitled'),
+              summary: String(raw.summary || raw.description || ''),
+              status: (raw.status as CanvasNode['status']) || 'queued',
+              fields: (raw.fields as Record<string, unknown>) || {},
               position: { x: 100 + nodes.length * 280, y: 200 },
               pinned: false,
+              createdAt: new Date().toISOString(),
             };
             nodes = [...nodes, newNode];
             break;

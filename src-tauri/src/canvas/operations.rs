@@ -44,15 +44,45 @@ pub struct NodeData {
     pub id: String,
     #[serde(rename = "type")]
     pub node_type: String,
-    pub title: String,
+    /// Title of the node. Falls back to `text` or `name` if not provided.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Some LLMs use "text" instead of "title"
+    #[serde(default)]
+    pub text: Option<String>,
+    /// Some LLMs use "name" instead of "title"
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default)]
     pub summary: String,
+    #[serde(default)]
+    pub description: Option<String>,
     #[serde(default = "default_status")]
     pub status: String,
     #[serde(default)]
     pub fields: HashMap<String, serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position_hint: Option<PositionHint>,
+}
+
+impl NodeData {
+    /// Get the display title, falling back through text → name → id
+    pub fn display_title(&self) -> String {
+        self.title
+            .clone()
+            .or_else(|| self.text.clone())
+            .or_else(|| self.name.clone())
+            .unwrap_or_else(|| self.id.clone())
+    }
+
+    /// Get the display summary, falling back to description
+    pub fn display_summary(&self) -> String {
+        if !self.summary.is_empty() {
+            self.summary.clone()
+        } else {
+            self.description.clone().unwrap_or_default()
+        }
+    }
 }
 
 fn default_status() -> String {
