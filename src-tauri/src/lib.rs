@@ -25,6 +25,8 @@ pub fn run() {
             commands::session::get_loop_ops,
             commands::session::list_sessions,
             commands::session::resume_saved_session,
+            commands::session::list_checkpoints,
+            commands::session::branch_from_checkpoint,
             commands::chat::send_chat,
             commands::chat::send_signal,
             commands::chat::save_chat,

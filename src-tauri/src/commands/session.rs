@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tokio::sync::{watch, Mutex};
 
+use crate::agent::checkpoint::{self, CheckpointInfo};
 use crate::agent::runtime::{LoopControl, SessionRunner};
 use crate::agent::signals::SignalQueue;
 use crate::canvas::state::CanvasState;
@@ -308,4 +309,142 @@ pub async fn resume_saved_session(
     });
 
     Ok(meta_clone)
+}
+
+/// List all checkpoints for a session.
+#[tauri::command]
+pub fn list_checkpoints(session_id: String) -> Result<Vec<CheckpointInfo>, String> {
+    let entry = global_index::find_by_id(&session_id)?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let canvas_dir = PathBuf::from(&entry.path)
+        .join(".autoresearch/canvases/main");
+    Ok(checkpoint::list_checkpoints(&canvas_dir))
+}
+
+/// Branch from a checkpoint — create a new canvas directory and start a new session from that state.
+#[tauri::command]
+pub async fn branch_from_checkpoint(
+    session_id: String,
+    loop_index: u32,
+    api_key: String,
+    app: AppHandle,
+) -> Result<SessionMeta, String> {
+    let entry = global_index::find_by_id(&session_id)?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let wd = PathBuf::from(&entry.path);
+    let dot_dir = wd.join(".autoresearch");
+    let main_canvas_dir = dot_dir.join("canvases").join("main");
+
+    // Load the checkpoint
+    let cp = checkpoint::load_checkpoint(&main_canvas_dir, loop_index)?;
+
+    // Find the next branch number
+    let canvases_dir = dot_dir.join("canvases");
+    let mut branch_num = 1u32;
+    loop {
+        let candidate = canvases_dir.join(format!("main-branch-{}", branch_num));
+        if !candidate.exists() {
+            break;
+        }
+        branch_num += 1;
+    }
+    let branch_dir = canvases_dir.join(format!("main-branch-{}", branch_num));
+
+    // Create the branch directory structure
+    std::fs::create_dir_all(branch_dir.join("loops"))
+        .map_err(|e| format!("Failed to create branch dir: {}", e))?;
+
+    // Write the checkpoint state as the branch's starting state
+    let branch_canvas = cp.canvas_state;
+    let branch_agent = cp.agent_state;
+    let branch_session_state = state_writer::SessionState {
+        canvas: branch_canvas.clone(),
+        agent: branch_agent.clone(),
+        chat_messages: Vec::new(),
+    };
+    state_writer::write_state(&branch_dir, &branch_session_state)?;
+
+    // Read meta to get session info
+    let meta_str = std::fs::read_to_string(dot_dir.join("meta.json"))
+        .map_err(|e| format!("Failed to read meta.json: {}", e))?;
+    let parent_meta: SessionMeta = serde_json::from_str(&meta_str)
+        .map_err(|e| format!("Failed to parse meta.json: {}", e))?;
+
+    // Read template
+    let template_path = dot_dir.join("template.md");
+    let template = parser::parse_template_file(&template_path)?;
+
+    // Set up LLM client
+    let llm_client = LlmClient::new(api_key).with_model(parent_meta.llm_model.clone());
+
+    let signal_queue = Arc::new(SignalQueue::new());
+    let (control_tx, control_rx) = watch::channel(LoopControl::Run);
+
+    let branch_id = format!("{}-branch-{}", session_id, branch_num);
+
+    // Stop any existing session
+    {
+        let state = app.state::<AppState>();
+        let mut guard = state.active.lock().await;
+        if let Some(old) = guard.take() {
+            let _ = old.control_tx.send(LoopControl::Stop);
+        }
+        *guard = Some(ActiveSession {
+            control_tx,
+            signal_queue: signal_queue.clone(),
+            session_id: branch_id.clone(),
+        });
+    }
+
+    let branch_meta = SessionMeta {
+        id: branch_id,
+        name: format!("{} (branch from loop {})", parent_meta.name, loop_index),
+        template_name: parent_meta.template_name,
+        created_at: chrono::Utc::now().to_rfc3339(),
+        last_modified: chrono::Utc::now().to_rfc3339(),
+        total_loops: branch_agent.current_loop,
+        status: "running".to_string(),
+        llm_provider: parent_meta.llm_provider,
+        llm_model: parent_meta.llm_model,
+        question: parent_meta.question.clone(),
+        working_dir: parent_meta.working_dir.clone(),
+        success_criteria: parent_meta.success_criteria.clone(),
+        max_loops: parent_meta.max_loops,
+    };
+
+    let branch_meta_clone = branch_meta.clone();
+    let session_name = branch_meta.name.clone();
+    let question = parent_meta.question;
+    let work_dir = PathBuf::from(&parent_meta.working_dir);
+    let sc = parent_meta.success_criteria;
+    let ml = parent_meta.max_loops;
+
+    // Spawn the agent loop with checkpoint state
+    let app_handle = app.clone();
+    tokio::spawn(async move {
+        let mut runner = SessionRunner {
+            session_dir: branch_dir,
+            session_name,
+            template,
+            canvas_state: branch_canvas,
+            agent_state: branch_agent,
+            llm_client,
+            question,
+            signal_queue,
+            control_rx,
+            working_dir: work_dir,
+            max_loops: ml,
+            success_criteria: sc,
+            completion_count: 0,
+        };
+
+        if let Err(e) = runner.run_loop(&app_handle).await {
+            tracing::error!("Branch agent loop ended with error: {}", e);
+            let _ = tauri::Emitter::emit(&app_handle, "session-error", serde_json::json!({
+                "error": e
+            }));
+        }
+    });
+
+    Ok(branch_meta_clone)
 }

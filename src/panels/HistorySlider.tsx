@@ -1,17 +1,54 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useSessionStore } from '../stores/sessionStore';
 import { useCanvasStore } from '../stores/canvasStore';
 import type { CanvasOp } from '../types/canvas';
+
+interface CheckpointInfo {
+  loop_index: number;
+  created_at: string;
+  verdict: Record<string, unknown>;
+  node_count: number;
+  edge_count: number;
+}
 
 export function HistorySlider() {
   const loopCount = useSessionStore((s) => s.loopCount);
   const sessionId = useSessionStore((s) => s.sessionId);
   const [viewLoop, setViewLoop] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checkpoints, setCheckpoints] = useState<CheckpointInfo[]>([]);
 
   const displayLoop = viewLoop ?? loopCount;
   const isLive = viewLoop === null || viewLoop === loopCount;
+
+  // Load checkpoints when session changes or new checkpoint is created
+  useEffect(() => {
+    if (!sessionId) {
+      setCheckpoints([]);
+      return;
+    }
+
+    const loadCheckpoints = async () => {
+      try {
+        const cps = await invoke<CheckpointInfo[]>('list_checkpoints', { sessionId });
+        setCheckpoints(cps);
+      } catch {
+        // Session may not have checkpoints yet
+      }
+    };
+
+    loadCheckpoints();
+
+    const unlisten = listen('checkpoint-created', () => {
+      loadCheckpoints();
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [sessionId, loopCount]);
 
   const scrubTo = useCallback(async (targetLoop: number) => {
     if (!sessionId || loading) return;
@@ -47,18 +84,40 @@ export function HistorySlider() {
 
   if (loopCount < 2) return null;
 
+  // Compute checkpoint positions as percentages along the slider
+  const checkpointMarkers = checkpoints
+    .filter((cp) => cp.loop_index >= 1 && cp.loop_index <= loopCount)
+    .map((cp) => ({
+      loop_index: cp.loop_index,
+      pct: ((cp.loop_index - 1) / (loopCount - 1)) * 100,
+    }));
+
   return (
     <div style={styles.container}>
       <div style={styles.inner}>
         <span style={styles.label}>History</span>
-        <input
-          type="range"
-          min={1}
-          max={loopCount}
-          value={displayLoop}
-          style={styles.slider}
-          onChange={(e) => scrubTo(Number(e.target.value))}
-        />
+        <div style={styles.sliderWrapper}>
+          <input
+            type="range"
+            min={1}
+            max={loopCount}
+            value={displayLoop}
+            style={styles.slider}
+            onChange={(e) => scrubTo(Number(e.target.value))}
+          />
+          {/* Diamond markers for checkpoints */}
+          {checkpointMarkers.map((m) => (
+            <div
+              key={m.loop_index}
+              title={`Checkpoint @ Loop ${m.loop_index}`}
+              onClick={() => scrubTo(m.loop_index)}
+              style={{
+                ...styles.diamond,
+                left: `calc(${m.pct}% + 2px)`,
+              }}
+            />
+          ))}
+        </div>
         <span style={styles.count}>
           {loading ? '...' : `Loop ${displayLoop}`}
         </span>
@@ -97,10 +156,29 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
   },
+  sliderWrapper: {
+    position: 'relative' as const,
+    width: 200,
+    height: 20,
+    display: 'flex',
+    alignItems: 'center',
+  },
   slider: {
     width: 200,
     accentColor: '#3b82f6',
     cursor: 'pointer',
+  },
+  diamond: {
+    position: 'absolute' as const,
+    top: -2,
+    width: 8,
+    height: 8,
+    background: '#f59e0b',
+    transform: 'rotate(45deg)',
+    cursor: 'pointer',
+    zIndex: 2,
+    border: '1px solid #d97706',
+    pointerEvents: 'auto' as const,
   },
   count: {
     fontSize: 12,

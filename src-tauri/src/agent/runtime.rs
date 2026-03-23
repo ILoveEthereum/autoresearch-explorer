@@ -12,6 +12,7 @@ use crate::storage::state_writer::{self, AgentState, LoopSummary, SessionState};
 use crate::template::types::ParsedTemplate;
 use crate::tools::registry::ToolRegistry;
 
+use super::checkpoint;
 use super::signals::SignalQueue;
 use super::watchdog::{self, LoopSnapshot, WatchdogVerdict};
 
@@ -124,6 +125,46 @@ impl SessionRunner {
                                 "verdict": serde_json::to_value(&verdict).unwrap_or_default()
                             }),
                         );
+
+                        // Save checkpoint before corrective action
+                        match &verdict {
+                            WatchdogVerdict::Progressing | WatchdogVerdict::PhaseComplete { .. } => {}
+                            _ => {
+                                match checkpoint::save_checkpoint(
+                                    &self.session_dir,
+                                    current,
+                                    &self.canvas_state,
+                                    &self.agent_state,
+                                    &verdict,
+                                ) {
+                                    Ok(path) => {
+                                        tracing::info!("Checkpoint saved at loop {}: {:?}", current, path);
+
+                                        // Add a checkpoint node to the canvas
+                                        let cp_node = crate::canvas::state::StoredNode {
+                                            id: format!("checkpoint-{}", current),
+                                            node_type: "checkpoint".to_string(),
+                                            title: format!("Checkpoint @ Loop {}", current),
+                                            summary: format!("Watchdog: {:?}", verdict),
+                                            status: "checkpoint".to_string(),
+                                            fields: std::collections::HashMap::new(),
+                                            cluster: None,
+                                            created_at: chrono::Utc::now().to_rfc3339(),
+                                            loop_index: Some(current),
+                                        };
+                                        self.canvas_state.nodes.push(cp_node);
+
+                                        let _ = app.emit("checkpoint-created", serde_json::json!({
+                                            "loop_index": current,
+                                            "verdict": serde_json::to_value(&verdict).unwrap_or_default(),
+                                        }));
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("Failed to save checkpoint: {}", e);
+                                    }
+                                }
+                            }
+                        }
 
                         match &verdict {
                             WatchdogVerdict::PhaseComplete { reason } => {
