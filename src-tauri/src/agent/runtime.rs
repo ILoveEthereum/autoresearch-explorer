@@ -13,6 +13,8 @@ use crate::storage::state_writer::{self, AgentState, LoopSummary, SessionState};
 use crate::template::types::ParsedTemplate;
 use crate::tools::registry::ToolRegistry;
 
+use crate::telegram::bot::TelegramBot;
+
 use super::checkpoint;
 use super::signals::SignalQueue;
 use super::sub_agent::{self, SubAgentConfig};
@@ -52,6 +54,8 @@ pub struct SessionRunner {
     pub model: String,
     /// Skill doc paths from past sessions to inject as context.
     pub past_experience: Vec<String>,
+    /// Optional Telegram bot for remote notifications and control.
+    pub telegram: Option<Arc<TelegramBot>>,
 }
 
 impl SessionRunner {
@@ -179,6 +183,12 @@ impl SessionRunner {
                             WatchdogVerdict::PhaseComplete { reason } => {
                                 self.completion_count += 1;
                                 if self.completion_count >= 2 {
+                                    // Telegram: notify completion
+                                    if let Some(tg) = &self.telegram {
+                                        if tg.config().notify_on_complete {
+                                            tg.send_completion(&self.session_name, reason).await;
+                                        }
+                                    }
                                     let _ = app.emit(
                                         "session-completed",
                                         serde_json::json!({ "reason": reason }),
@@ -218,6 +228,12 @@ impl SessionRunner {
                                 ).await;
                             }
                             WatchdogVerdict::NeedsHuman { question } => {
+                                // Telegram: notify stuck/needs human
+                                if let Some(tg) = &self.telegram {
+                                    if tg.config().notify_on_stuck {
+                                        tg.send_stuck(&self.session_name, question).await;
+                                    }
+                                }
                                 let _ = app.emit(
                                     "chat-message",
                                     serde_json::json!({
@@ -638,6 +654,21 @@ If no specific tool would help, reply: {{"tool_name": "none", "description": "no
             "plan": response.plan,
             "canvas_ops_count": response.canvas_operations.len(),
         }));
+
+        // Telegram: periodic progress notification
+        if let Some(tg) = &self.telegram {
+            let every = tg.config().notify_every_n_loops;
+            if every > 0 && loop_index % every == 0 {
+                let summary = format!(
+                    "Plan: {}\nCanvas: {} nodes, {} edges\n{} canvas ops this loop",
+                    response.plan,
+                    self.canvas_state.nodes.len(),
+                    self.canvas_state.edges.len(),
+                    response.canvas_operations.len()
+                );
+                tg.send_progress(&self.session_name, loop_index, &summary).await;
+            }
+        }
 
         // Emit chat message if present
         if let Some(msg) = &response.chat_message {

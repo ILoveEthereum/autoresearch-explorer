@@ -170,6 +170,16 @@ export function SessionControls() {
           </>
         )}
         <ExportMenu />
+        <button
+          style={styles.btn}
+          onClick={() => useUiStore.getState().setShowSettings(true)}
+          title="Settings"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ marginRight: 4 }}>
+            <path d="M7 9a2 2 0 100-4 2 2 0 000 4z" stroke="#374151" strokeWidth="1.2"/>
+            <path d="M11.4 8.6l.9.5c.1.1.2.3.1.4l-.9 1.5c-.1.1-.3.2-.4.1l-.9-.5c-.3.2-.7.4-1 .5l-.1 1c0 .2-.2.3-.3.3H6.2c-.2 0-.3-.1-.3-.3l-.1-1c-.4-.1-.7-.3-1-.5l-.9.5c-.1.1-.3 0-.4-.1l-.9-1.5c-.1-.1 0-.3.1-.4l.9-.5c0-.4 0-.8 0-1.2l-.9-.5c-.1-.1-.2-.3-.1-.4l.9-1.5c.1-.1.3-.2.4-.1l.9.5c.3-.2.7-.4 1-.5l.1-1c0-.2.2-.3.3-.3h1.6c.2 0 .3.1.3.3l.1 1c.4.1.7.3 1 .5l.9-.5c.1-.1.3 0 .4.1l.9 1.5c.1.1 0 .3-.1.4l-.9.5c0 .4 0 .8 0 1.2z" stroke="#374151" strokeWidth="1.2"/>
+          </svg>
+        </button>
         <button style={styles.btn} onClick={() => setShowTemplateSelector(true)}>
           New Session
         </button>
