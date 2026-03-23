@@ -18,6 +18,14 @@ pub struct SessionMeta {
     pub question: String,
     /// The user-chosen working directory — this IS the session root.
     pub working_dir: String,
+    #[serde(default)]
+    pub success_criteria: String,
+    #[serde(default = "default_max_loops")]
+    pub max_loops: u32,
+}
+
+fn default_max_loops() -> u32 {
+    50
 }
 
 /// Create a new session inside `working_dir`.
@@ -36,6 +44,8 @@ pub fn create_session_dir(
     question: &str,
     model: &str,
     working_dir: &str,
+    success_criteria: &str,
+    max_loops: u32,
 ) -> Result<(PathBuf, SessionMeta), String> {
     let session_id = format!(
         "{}-{}",
@@ -79,6 +89,8 @@ pub fn create_session_dir(
         llm_model: model.to_string(),
         question: question.to_string(),
         working_dir: working_dir.to_string(),
+        success_criteria: success_criteria.to_string(),
+        max_loops,
     };
 
     let meta_json = serde_json::to_string_pretty(&meta)

@@ -35,6 +35,8 @@ pub struct SessionRunner {
     pub control_rx: watch::Receiver<LoopControl>,
     /// The user-chosen working directory — this IS the session root.
     pub working_dir: PathBuf,
+    /// Maximum number of loops (0 = unlimited).
+    pub max_loops: u32,
 }
 
 impl SessionRunner {
@@ -92,6 +94,20 @@ impl SessionRunner {
                 }));
                 // Wait a bit before retrying to avoid tight error loops
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            }
+
+            // Check max_loops stop condition (0 = unlimited)
+            if self.max_loops > 0 && self.agent_state.current_loop >= self.max_loops {
+                tracing::info!(
+                    "Reached max_loops limit ({}) — stopping",
+                    self.max_loops
+                );
+                let _ = app.emit("agent-status", serde_json::json!({
+                    "status": "stopped",
+                    "loop": self.agent_state.current_loop,
+                    "reason": "max_loops_reached"
+                }));
+                break;
             }
 
             // Small delay between loops to avoid hammering the API

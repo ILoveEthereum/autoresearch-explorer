@@ -39,14 +39,18 @@ pub async fn create_session(
     api_key: String,
     model: Option<String>,
     working_dir: String,
+    success_criteria: Option<String>,
+    max_loops: Option<u32>,
     app: AppHandle,
 ) -> Result<SessionMeta, String> {
     let template_path = PathBuf::from(&template_path);
     let template = parser::parse_template_file(&template_path)?;
 
     let model_str = model.as_deref().unwrap_or("Qwen/Qwen2.5-72B-Instruct");
+    let sc = success_criteria.as_deref().unwrap_or("");
+    let ml = max_loops.unwrap_or(50);
     let (session_dir, meta) =
-        session_dir::create_session_dir(&name, &template_path, &template.name, &question, model_str, &working_dir)?;
+        session_dir::create_session_dir(&name, &template_path, &template.name, &question, model_str, &working_dir, sc, ml)?;
 
     let mut llm_client = LlmClient::new(api_key);
     if let Some(m) = model {
@@ -87,6 +91,7 @@ pub async fn create_session(
             signal_queue,
             control_rx,
             working_dir: work_dir,
+            max_loops: ml,
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
@@ -268,6 +273,7 @@ pub async fn resume_saved_session(
     let session_name = meta.name.clone();
     let question = meta.question.clone();
     let work_dir = PathBuf::from(&meta.working_dir);
+    let session_max_loops = meta.max_loops;
     let session_dir_clone = canvas_dir.clone();
 
     // Spawn the agent loop
@@ -284,6 +290,7 @@ pub async fn resume_saved_session(
             signal_queue,
             control_rx,
             working_dir: work_dir,
+            max_loops: session_max_loops,
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
