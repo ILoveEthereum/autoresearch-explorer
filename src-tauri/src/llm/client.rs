@@ -216,6 +216,51 @@ impl LlmClient {
             .and_then(|c| c.message.content.clone())
             .ok_or_else(|| "No content in LLM response".to_string())
     }
+
+    /// Call the LLM with a single user prompt and configurable max_tokens.
+    /// Used for lightweight evaluation tasks like the watchdog.
+    pub async fn call_raw_with_max_tokens(
+        &self,
+        prompt: &str,
+        max_tokens: u32,
+    ) -> Result<String, String> {
+        let request = serde_json::json!({
+            "model": self.model,
+            "messages": [
+                { "role": "user", "content": prompt }
+            ],
+            "temperature": 0.3,
+            "max_tokens": max_tokens
+        });
+
+        let response = self
+            .http
+            .post(OPENROUTER_URL)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("HTTP-Referer", "https://autoresearch.app")
+            .header("X-Title", "Autoresearch")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("LLM API error ({}): {}", status, body));
+        }
+
+        let completion: ChatCompletionResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse LLM response: {}", e))?;
+
+        completion
+            .choices
+            .first()
+            .and_then(|c| c.message.content.clone())
+            .ok_or_else(|| "No content in LLM response".to_string())
+    }
 }
 
 /// Try to extract a JSON object from text that might contain markdown

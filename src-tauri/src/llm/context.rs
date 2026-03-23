@@ -187,6 +187,11 @@ pub fn build_user_message_with_signals(
         ));
     }
 
+    // Watchdog replan hint (if the agent was flagged as stuck)
+    if let Some(hint) = &agent.replan_hint {
+        msg.push_str(&format!("\n== WATCHDOG REPLAN HINT ==\n{}\n", hint));
+    }
+
     msg.push_str(&format!(
         "\n== CURRENT LOOP ==\nThis is loop {}. Execute the next step of the research process.\n",
         agent.current_loop + 1

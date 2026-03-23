@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { CanvasView } from './canvas/CanvasView';
 import { SessionControls } from './panels/SessionControls';
 import { DetailPanel } from './panels/DetailPanel';
@@ -9,6 +10,65 @@ import { useUiStore } from './stores/uiStore';
 import { useSessionStore } from './stores/sessionStore';
 import { useTauriEvents } from './hooks/useTauriEvents';
 import { useKeyboard } from './hooks/useKeyboard';
+
+function CompletionBanner() {
+  const completionReason = useSessionStore((s) => s.completionReason);
+  const dismissCompletion = useSessionStore((s) => s.dismissCompletion);
+
+  if (!completionReason) return null;
+
+  const handleResume = async () => {
+    dismissCompletion();
+    try {
+      await invoke('resume_session');
+    } catch (err) {
+      console.error('Failed to resume after completion:', err);
+    }
+  };
+
+  return (
+    <div style={completionStyles.banner}>
+      <span style={completionStyles.text}>
+        Research complete: {completionReason}
+      </span>
+      <button style={completionStyles.button} onClick={handleResume}>
+        Resume Anyway
+      </button>
+    </div>
+  );
+}
+
+const completionStyles: Record<string, React.CSSProperties> = {
+  banner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    padding: '10px 20px',
+    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+    color: '#fff',
+    fontWeight: 500,
+    fontSize: 14,
+  },
+  text: {
+    flex: 1,
+  },
+  button: {
+    background: 'rgba(255,255,255,0.2)',
+    color: '#fff',
+    border: '1px solid rgba(255,255,255,0.4)',
+    borderRadius: 6,
+    padding: '5px 14px',
+    cursor: 'pointer',
+    fontSize: 13,
+    fontWeight: 500,
+  },
+};
 
 function App() {
   const showDetailPanel = useUiStore((s) => s.showDetailPanel);
@@ -25,6 +85,7 @@ function App() {
       <div style={styles.main}>
         {sessionId && <ChatPanel />}
         <div style={styles.canvasContainer}>
+          <CompletionBanner />
           <CanvasView />
           {sessionId && <HistorySlider />}
           {!sessionId && <HomeScreen />}

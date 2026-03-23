@@ -13,6 +13,7 @@ use crate::template::types::ParsedTemplate;
 use crate::tools::registry::ToolRegistry;
 
 use super::signals::SignalQueue;
+use super::watchdog::{self, LoopSnapshot, WatchdogVerdict};
 
 /// Control commands sent to the agent loop.
 #[derive(Debug, Clone, PartialEq)]
@@ -37,6 +38,10 @@ pub struct SessionRunner {
     pub working_dir: PathBuf,
     /// Maximum number of loops (0 = unlimited).
     pub max_loops: u32,
+    /// Success criteria for watchdog completion detection.
+    pub success_criteria: String,
+    /// Consecutive "phase_complete" verdicts from the watchdog.
+    pub completion_count: u32,
 }
 
 impl SessionRunner {
@@ -96,6 +101,74 @@ impl SessionRunner {
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             }
 
+            // 3. Watchdog evaluation every 3 loops
+            let current = self.agent_state.current_loop;
+            if current > 0 && current % 3 == 0 {
+                let snapshots = self.build_loop_snapshots();
+                match watchdog::evaluate(
+                    &self.llm_client,
+                    &self.canvas_state,
+                    &snapshots,
+                    &self.success_criteria,
+                    current,
+                )
+                .await
+                {
+                    Ok(verdict) => {
+                        tracing::info!("Watchdog verdict at loop {}: {:?}", current, verdict);
+
+                        let _ = app.emit(
+                            "watchdog-verdict",
+                            serde_json::json!({
+                                "loop": current,
+                                "verdict": serde_json::to_value(&verdict).unwrap_or_default()
+                            }),
+                        );
+
+                        match &verdict {
+                            WatchdogVerdict::PhaseComplete { reason } => {
+                                self.completion_count += 1;
+                                if self.completion_count >= 2 {
+                                    let _ = app.emit(
+                                        "session-completed",
+                                        serde_json::json!({ "reason": reason }),
+                                    );
+                                    break;
+                                }
+                            }
+                            WatchdogVerdict::StuckLooping { repeated_action } => {
+                                self.agent_state.replan_hint = Some(format!(
+                                    "WATCHDOG ALERT: You've been repeating '{}'. Try a completely different approach.",
+                                    repeated_action
+                                ));
+                                self.completion_count = 0;
+                            }
+                            WatchdogVerdict::StuckNoInfo { .. }
+                            | WatchdogVerdict::StuckCodeError { .. } => {
+                                self.agent_state.replan_hint = Some(
+                                    "WATCHDOG ALERT: You appear stuck. Try a different strategy or tool.".to_string(),
+                                );
+                                self.completion_count = 0;
+                            }
+                            WatchdogVerdict::NeedsHuman { question } => {
+                                let _ = app.emit(
+                                    "chat-message",
+                                    serde_json::json!({
+                                        "from": "watchdog",
+                                        "text": question
+                                    }),
+                                );
+                                self.completion_count = 0;
+                            }
+                            _ => {
+                                self.completion_count = 0;
+                            }
+                        }
+                    }
+                    Err(e) => tracing::warn!("Watchdog error: {}", e),
+                }
+            }
+
             // Check max_loops stop condition (0 = unlimited)
             if self.max_loops > 0 && self.agent_state.current_loop >= self.max_loops {
                 tracing::info!(
@@ -115,6 +188,20 @@ impl SessionRunner {
         }
 
         Ok(())
+    }
+
+    /// Build loop snapshots from recent history for the watchdog.
+    fn build_loop_snapshots(&self) -> Vec<LoopSnapshot> {
+        self.agent_state
+            .recent_history
+            .iter()
+            .map(|h| LoopSnapshot {
+                loop_index: h.loop_index,
+                plan: h.plan.clone(),
+                tools_called: Vec::new(), // Tool names aren't stored in LoopSummary
+                canvas_ops_count: 0,      // Not tracked in LoopSummary; plan/outcome suffice
+            })
+            .collect()
     }
 
     /// Run a single agent loop iteration.
@@ -138,6 +225,9 @@ impl SessionRunner {
             &self.question,
             &signals,
         );
+
+        // Consume the replan hint after it has been included in the user message
+        self.agent_state.replan_hint = None;
 
         // Call LLM
         let _ = app.emit("agent-status", serde_json::json!({

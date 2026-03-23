@@ -33,6 +33,7 @@ export function useTauriEvents() {
   const applyOps = useCanvasStore((s) => s.applyOps);
   const setStatus = useSessionStore((s) => s.setStatus);
   const setLoopCount = useSessionStore((s) => s.setLoopCount);
+  const setCompletionReason = useSessionStore((s) => s.setCompletionReason);
   const addChatMessage = useChatStore((s) => s.addMessage);
 
   useEffect(() => {
@@ -71,6 +72,17 @@ export function useTauriEvents() {
         console.error('[Session Error]', event.payload.error);
       });
       if (!cancelled) unlisteners.push(u5);
+
+      const u6 = await listenWithRetry<{ reason: string }>('session-completed', (event) => {
+        console.log('[Session Completed]', event.payload.reason);
+        setCompletionReason(event.payload.reason);
+      });
+      if (!cancelled) unlisteners.push(u6);
+
+      const u7 = await listenWithRetry<{ loop: number; verdict: unknown }>('watchdog-verdict', (event) => {
+        console.log('[Watchdog]', `loop=${event.payload.loop}`, event.payload.verdict);
+      });
+      if (!cancelled) unlisteners.push(u7);
     }
 
     setup();
@@ -79,5 +91,5 @@ export function useTauriEvents() {
       cancelled = true;
       unlisteners.forEach((u) => u());
     };
-  }, [applyOps, setStatus, setLoopCount, addChatMessage]);
+  }, [applyOps, setStatus, setLoopCount, setCompletionReason, addChatMessage]);
 }

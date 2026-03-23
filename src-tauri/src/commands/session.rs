@@ -76,6 +76,7 @@ pub async fn create_session(
     let meta_clone = meta.clone();
     let session_name = name.clone();
     let work_dir = PathBuf::from(&working_dir);
+    let sc_owned = sc.to_string();
 
     // Spawn the continuous loop in a background task
     let app_handle = app.clone();
@@ -92,6 +93,8 @@ pub async fn create_session(
             control_rx,
             working_dir: work_dir,
             max_loops: ml,
+            success_criteria: sc_owned,
+            completion_count: 0,
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
@@ -274,6 +277,7 @@ pub async fn resume_saved_session(
     let question = meta.question.clone();
     let work_dir = PathBuf::from(&meta.working_dir);
     let session_max_loops = meta.max_loops;
+    let session_success_criteria = meta.success_criteria.clone();
     let session_dir_clone = canvas_dir.clone();
 
     // Spawn the agent loop
@@ -291,6 +295,8 @@ pub async fn resume_saved_session(
             control_rx,
             working_dir: work_dir,
             max_loops: session_max_loops,
+            success_criteria: session_success_criteria,
+            completion_count: 0,
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
