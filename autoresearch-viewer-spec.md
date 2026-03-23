@@ -240,7 +240,7 @@ Human edits are accumulated and processed by the agent at the start of each loop
 
 **Output.** The session can be:
 
-- **Saved** as a `.autoresearch` file (JSON) and reopened later to continue.
+- **Saved** as an `autoresearch` file (JSON) and reopened later to continue.
 - **Exported** as PNG/SVG (the diagram as an image).
 - **Exported** as Markdown (an auto-generated research report, structured from the canvas contents — findings as sections, sources as citations, experiment results as tables).
 - **Forked** to start a new research branch from any point.

@@ -4,7 +4,7 @@
 
 **Goal:** Transform Autoresearch from a single-canvas research viewer into a self-healing, multi-canvas agent system with cross-session memory, tool-building, and Telegram integration.
 
-**Architecture:** The system evolves from one SessionRunner to a tree of runners (main + sub-agents), with a watchdog metacognition layer, OpenRouter for LLM access, SQLite FTS5 for memory, and a Telegram bot for remote control. The working directory becomes the session root with `.autoresearch/` for internal state.
+**Architecture:** The system evolves from one SessionRunner to a tree of runners (main + sub-agents), with a watchdog metacognition layer, OpenRouter for LLM access, SQLite FTS5 for memory, and a Telegram bot for remote control. The working directory becomes the session root with `autoresearch/` for internal state.
 
 **Tech Stack:** Rust (Tauri backend), React 19 + TypeScript (frontend), Zustand (state), SQLite + rusqlite (memory), teloxide (Telegram), OpenRouter API (LLM), DuckDuckGo (search), arXiv API (papers)
 
@@ -140,7 +140,7 @@ git commit -m "feat: migrate from DeepInfra to OpenRouter with searchable model 
 - Modify: `src-tauri/src/commands/session.rs` (update create/list/load)
 - Modify: `src/panels/TemplateSelector.tsx` (working dir now required)
 - Modify: `src/panels/HomeScreen.tsx` (read from global index)
-- Modify: `src-tauri/src/agent/runtime.rs` (write to .autoresearch/ not research/)
+- Modify: `src-tauri/src/agent/runtime.rs` (write to autoresearch/ not research/)
 
 **Step 1: Create global index module**
 
@@ -194,8 +194,8 @@ Add `dirs` crate: `cargo add dirs`
 **Step 2: Rewrite session_dir.rs**
 
 - `create_session_dir()` now takes a required `working_dir: &str`
-- Creates `.autoresearch/` inside the working dir (not `research/` in cwd)
-- Structure: `.autoresearch/meta.json`, `.autoresearch/canvases/main/loops/`, `.autoresearch/canvases/main/state.json`, `.autoresearch/chat.json`
+- Creates `autoresearch/` inside the working dir (not `research/` in cwd)
+- Structure: `autoresearch/meta.json`, `autoresearch/canvases/main/loops/`, `autoresearch/canvases/main/state.json`, `autoresearch/chat.json`
 - Creates `overview.md` in the working dir root (visible to user)
 - Adds entry to global index
 
@@ -203,13 +203,13 @@ Add `dirs` crate: `cargo add dirs`
 
 - `create_session`: working_dir is now required (not Optional)
 - `list_sessions`: reads from global index instead of scanning `research/`
-- `load_session`: reads `.autoresearch/canvases/main/state.json` from the working dir
+- `load_session`: reads `autoresearch/canvases/main/state.json` from the working dir
 - `resume_saved_session`: same but restarts loop
 
 **Step 4: Update runtime.rs paths**
 
-- Loop files write to `.autoresearch/canvases/main/loops/{N}/`
-- State writes to `.autoresearch/canvases/main/state.json`
+- Loop files write to `autoresearch/canvases/main/loops/{N}/`
+- State writes to `autoresearch/canvases/main/state.json`
 - Overview writes to `{working_dir}/overview.md`
 
 **Step 5: Update TemplateSelector**
@@ -229,7 +229,7 @@ Run: `cargo check && npx tsc --noEmit`
 
 ```bash
 git add -A
-git commit -m "feat: working directory is the session, .autoresearch/ for internal state"
+git commit -m "feat: working directory is the session, autoresearch/ for internal state"
 ```
 
 ---
@@ -446,7 +446,7 @@ git commit -m "feat: watchdog metacognition layer with completion detection"
 
 ```rust
 pub fn save_checkpoint(
-    canvas_dir: &Path,  // .autoresearch/canvases/main/
+    canvas_dir: &Path,  // autoresearch/canvases/main/
     loop_index: u32,
     canvas_state: &CanvasState,
     agent_state: &AgentState,
@@ -543,7 +543,7 @@ pub async fn spawn_sub_agent(
     llm_client: LlmClient,
     app: &AppHandle,
 ) -> Result<SubAgent, String> {
-    // Create .autoresearch/canvases/{sub_agent_id}/
+    // Create autoresearch/canvases/{sub_agent_id}/
     // Build a SessionRunner with the tool-building template
     // Spawn in tokio task
     // Emit "sub-agent-spawned" event to frontend

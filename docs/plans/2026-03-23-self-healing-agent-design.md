@@ -71,7 +71,7 @@ The stuck node shows a special "building tool" indicator:
 
 ```
 /Users/you/Projects/BitNetTTS/
-+-- .autoresearch/
++-- autoresearch/
 |   +-- meta.json
 |   +-- canvases/
 |   |   +-- main/
@@ -136,7 +136,7 @@ Before any corrective action, the watchdog creates a checkpoint node on the canv
 +------------------------------+
 ```
 
-Full canvas state saved to `.autoresearch/canvases/main/checkpoints/loop-023.json`. User or agent can branch from any checkpoint to try a different approach.
+Full canvas state saved to `autoresearch/canvases/main/checkpoints/loop-023.json`. User or agent can branch from any checkpoint to try a different approach.
 
 ### Completion Detection
 
@@ -351,7 +351,7 @@ Working directory IS the session. No more `src-tauri/research/`.
 
 ```
 /Users/you/Projects/BitNetTTS/     <- user picks this
-+-- .autoresearch/                  <- hidden, internal state
++-- autoresearch/                   <- visible, internal state
 |   +-- meta.json
 |   +-- canvases/
 |   +-- chat.json
@@ -384,7 +384,7 @@ All nodes have an expandable "Loop Context" accordion showing the agent's reason
 1. **OpenRouter migration** — swap DeepInfra for OpenRouter, model picker
 2. **Core tool set** — add shell, git, package_manager, arxiv_search, pdf_reader
 3. **Watchdog + completion detection** — stuck detection, auto-stop
-4. **Data layout** — working dir = session, .autoresearch/ folder, global index
+4. **Data layout** — working dir = session, autoresearch/ folder, global index
 5. **Multi-canvas** — project tree sidebar, sub-canvas switching
 6. **Tool-builder sub-agent** — spawn, build, test, register
 7. **Self-improvement** — skill docs, SQLite FTS5 memory, wizard step 6

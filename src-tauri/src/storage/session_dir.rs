@@ -31,11 +31,11 @@ fn default_max_loops() -> u32 {
 /// Create a new session inside `working_dir`.
 ///
 /// Directory layout:
-///   {working_dir}/.autoresearch/meta.json
-///   {working_dir}/.autoresearch/canvases/main/loops/
-///   {working_dir}/.autoresearch/canvases/main/state.json
-///   {working_dir}/.autoresearch/chat.json
-///   {working_dir}/.autoresearch/sources/
+///   {working_dir}/autoresearch/meta.json
+///   {working_dir}/autoresearch/canvases/main/loops/
+///   {working_dir}/autoresearch/canvases/main/state.json
+///   {working_dir}/autoresearch/chat.json
+///   {working_dir}/autoresearch/sources/
 ///   {working_dir}/overview.md
 pub fn create_session_dir(
     name: &str,
@@ -54,7 +54,7 @@ pub fn create_session_dir(
     );
 
     let wd = PathBuf::from(working_dir);
-    let dot_dir = wd.join(".autoresearch");
+    let dot_dir = wd.join("autoresearch");
     let canvas_dir = dot_dir.join("canvases").join("main");
 
     // Create directory structure
@@ -116,13 +116,13 @@ pub fn create_session_dir(
         question: question.to_string(),
     })?;
 
-    // Return the internal session dir (.autoresearch/canvases/main/)
+    // Return the internal session dir (autoresearch/canvases/main/)
     Ok((canvas_dir, meta))
 }
 
-/// Update the meta.json file inside .autoresearch/
+/// Update the meta.json file inside autoresearch/
 pub fn update_meta(working_dir: &Path, meta: &SessionMeta) -> Result<(), String> {
-    let meta_path = working_dir.join(".autoresearch").join("meta.json");
+    let meta_path = working_dir.join("autoresearch").join("meta.json");
     let meta_json = serde_json::to_string_pretty(meta)
         .map_err(|e| format!("Failed to serialize meta: {}", e))?;
     std::fs::write(&meta_path, meta_json)

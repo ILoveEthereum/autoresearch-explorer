@@ -30,7 +30,7 @@ pub async fn send_chat(
 pub fn save_chat(session_id: String, messages: serde_json::Value) -> Result<(), String> {
     let entry = global_index::find_by_id(&session_id)?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
-    let chat_path = PathBuf::from(&entry.path).join(".autoresearch/chat.json");
+    let chat_path = PathBuf::from(&entry.path).join("autoresearch/chat.json");
     let json = serde_json::to_string_pretty(&messages)
         .map_err(|e| format!("Failed to serialize chat: {}", e))?;
     std::fs::write(&chat_path, json)
@@ -43,7 +43,7 @@ pub fn save_chat(session_id: String, messages: serde_json::Value) -> Result<(), 
 pub fn load_chat(session_id: String) -> Result<serde_json::Value, String> {
     let entry = global_index::find_by_id(&session_id)?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
-    let chat_path = PathBuf::from(&entry.path).join(".autoresearch/chat.json");
+    let chat_path = PathBuf::from(&entry.path).join("autoresearch/chat.json");
     if !chat_path.exists() {
         return Ok(serde_json::json!([]));
     }

@@ -3,7 +3,7 @@ use std::path::Path;
 
 /// Update the overview.md file after each loop.
 ///
-/// `canvas_dir` — where loops live (e.g. `.autoresearch/canvases/main/`)
+/// `canvas_dir` — where loops live (e.g. `autoresearch/canvases/main/`)
 /// `overview_path` — where to write the overview (e.g. `{working_dir}/overview.md`)
 pub async fn update_overview(
     canvas_dir: &Path,

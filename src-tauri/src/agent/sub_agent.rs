@@ -37,7 +37,7 @@ pub async fn spawn_sub_agent(
     app: &AppHandle,
 ) -> Result<(), String> {
     let canvas_dir = working_dir
-        .join(".autoresearch")
+        .join("autoresearch")
         .join("canvases")
         .join(&config.id);
 

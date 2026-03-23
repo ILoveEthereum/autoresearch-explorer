@@ -431,7 +431,7 @@ If no specific tool would help, reply: {{"tool_name": "none", "description": "no
         // Check if this sub-agent canvas already exists
         let canvas_dir = self
             .working_dir
-            .join(".autoresearch")
+            .join("autoresearch")
             .join("canvases")
             .join(&sub_id);
         if canvas_dir.exists() {
@@ -654,7 +654,7 @@ If no specific tool would help, reply: {{"tool_name": "none", "description": "no
         state_writer::write_state(&self.session_dir, &session_state)?;
 
         // Update meta.json
-        let meta_path = self.working_dir.join(".autoresearch").join("meta.json");
+        let meta_path = self.working_dir.join("autoresearch").join("meta.json");
         if let Ok(meta_str) = std::fs::read_to_string(&meta_path) {
             if let Ok(mut meta) = serde_json::from_str::<session_dir::SessionMeta>(&meta_str) {
                 meta.total_loops = loop_index;

@@ -172,7 +172,7 @@ pub fn get_loop_ops(session_id: String, loop_index: u32) -> Result<serde_json::V
     let entry = global_index::find_by_id(&session_id)?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
     let ops_path = PathBuf::from(&entry.path)
-        .join(".autoresearch/canvases/main/loops")
+        .join("autoresearch/canvases/main/loops")
         .join(format!("{:03}", loop_index))
         .join("canvas-ops.json");
 
@@ -194,7 +194,7 @@ pub fn load_session(session_id: String) -> Result<serde_json::Value, String> {
     let entry = global_index::find_by_id(&session_id)?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
     let state_path = PathBuf::from(&entry.path)
-        .join(".autoresearch/canvases/main/state.json");
+        .join("autoresearch/canvases/main/state.json");
 
     if !state_path.exists() {
         return Err(format!("Session state not found: {}", session_id));
@@ -215,7 +215,7 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
 
     for entry in entries {
         let meta_path = PathBuf::from(&entry.path)
-            .join(".autoresearch")
+            .join("autoresearch")
             .join("meta.json");
         if meta_path.exists() {
             if let Ok(meta_str) = std::fs::read_to_string(&meta_path) {
@@ -240,7 +240,7 @@ pub async fn resume_saved_session(
     let entry = global_index::find_by_id(&session_id)?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
     let wd = PathBuf::from(&entry.path);
-    let dot_dir = wd.join(".autoresearch");
+    let dot_dir = wd.join("autoresearch");
     let canvas_dir = dot_dir.join("canvases").join("main");
 
     if !dot_dir.exists() {
@@ -355,7 +355,7 @@ pub fn list_checkpoints(session_id: String) -> Result<Vec<CheckpointInfo>, Strin
     let entry = global_index::find_by_id(&session_id)?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
     let canvas_dir = PathBuf::from(&entry.path)
-        .join(".autoresearch/canvases/main");
+        .join("autoresearch/canvases/main");
     Ok(checkpoint::list_checkpoints(&canvas_dir))
 }
 
@@ -370,7 +370,7 @@ pub async fn branch_from_checkpoint(
     let entry = global_index::find_by_id(&session_id)?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
     let wd = PathBuf::from(&entry.path);
-    let dot_dir = wd.join(".autoresearch");
+    let dot_dir = wd.join("autoresearch");
     let main_canvas_dir = dot_dir.join("canvases").join("main");
 
     // Load the checkpoint
@@ -510,7 +510,7 @@ pub fn get_loop_detail(session_id: String, loop_index: u32) -> Result<serde_json
     let entry = global_index::find_by_id(&session_id)?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
     let loop_dir = PathBuf::from(&entry.path)
-        .join(".autoresearch/canvases/main/loops")
+        .join("autoresearch/canvases/main/loops")
         .join(format!("{:03}", loop_index));
 
     if !loop_dir.exists() {
@@ -545,7 +545,7 @@ pub fn list_canvases(session_id: String) -> Result<Vec<CanvasEntry>, String> {
     let entry = global_index::find_by_id(&session_id)?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
     let canvases_dir = PathBuf::from(&entry.path)
-        .join(".autoresearch")
+        .join("autoresearch")
         .join("canvases");
 
     let mut entries = vec![CanvasEntry {
@@ -593,7 +593,7 @@ pub fn get_canvas_state(session_id: String, canvas_id: String) -> Result<serde_j
     let entry = global_index::find_by_id(&session_id)?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
     let state_path = PathBuf::from(&entry.path)
-        .join(".autoresearch")
+        .join("autoresearch")
         .join("canvases")
         .join(&canvas_id)
         .join("state.json");
