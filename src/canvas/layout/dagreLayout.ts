@@ -1,6 +1,6 @@
 import dagre from '@dagrejs/dagre';
 import type { CanvasNode, CanvasEdge } from '../../types/canvas';
-import { NODE_WIDTH, NODE_BASE_HEIGHT } from '../nodes/renderNode';
+import { NODE_WIDTH, NODE_BASE_HEIGHT } from '../nodes/nodeConstants';
 
 /**
  * Run Dagre layout on the given nodes and edges.

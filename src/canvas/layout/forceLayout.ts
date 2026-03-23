@@ -1,6 +1,6 @@
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } from 'd3-force';
 import type { CanvasNode, CanvasEdge } from '../../types/canvas';
-import { NODE_WIDTH, NODE_BASE_HEIGHT } from '../nodes/renderNode';
+import { NODE_WIDTH, NODE_BASE_HEIGHT } from '../nodes/nodeConstants';
 
 interface SimNode {
   id: string;
