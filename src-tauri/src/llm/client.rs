@@ -152,6 +152,12 @@ impl LlmClient {
             ));
         }
 
+        // Check if response was truncated (finish_reason == "length")
+        let was_truncated = completion.choices.first()
+            .and_then(|c| c.finish_reason.as_deref())
+            .map(|r| r == "length")
+            .unwrap_or(false);
+
         // Try direct JSON parse first
         if let Ok(agent_response) = serde_json::from_str::<AgentResponse>(content) {
             return Ok((agent_response, completion.usage));
@@ -162,6 +168,17 @@ impl LlmClient {
         if let Some(json_str) = extract_json(content) {
             if let Ok(agent_response) = serde_json::from_str::<AgentResponse>(&json_str) {
                 return Ok((agent_response, completion.usage));
+            }
+        }
+
+        // If the response was truncated, try to recover partial JSON
+        if was_truncated {
+            tracing::warn!("Response was truncated (finish_reason=length), attempting JSON recovery...");
+            if let Some(recovered) = recover_truncated_json(content) {
+                if let Ok(agent_response) = serde_json::from_str::<AgentResponse>(&recovered) {
+                    tracing::info!("Successfully recovered truncated JSON response");
+                    return Ok((agent_response, completion.usage));
+                }
             }
         }
 
@@ -308,4 +325,217 @@ fn extract_json(text: &str) -> Option<String> {
     }
 
     None
+}
+
+/// Attempt to recover a valid AgentResponse JSON from truncated output.
+/// The model often gets cut off mid-response due to max_tokens. We try multiple strategies:
+/// 1. Truncate to last complete `}` and close unclosed braces/brackets
+/// 2. Build a minimal response from whatever fields we can extract
+fn recover_truncated_json(text: &str) -> Option<String> {
+    // First, find the start of the JSON object
+    let json_start = text.find('{')?;
+    let json_text = &text[json_start..];
+
+    // Strategy 1: Find the last complete `}` and try to close remaining braces
+    if let Some(result) = try_close_braces(json_text) {
+        if serde_json::from_str::<serde_json::Value>(&result).is_ok() {
+            return Some(result);
+        }
+    }
+
+    // Strategy 2: Extract individual fields and rebuild
+    let reasoning = extract_json_string_field(json_text, "reasoning").unwrap_or_default();
+    let plan = extract_json_string_field(json_text, "plan").unwrap_or_default();
+
+    if reasoning.is_empty() && plan.is_empty() {
+        return None;
+    }
+
+    // Try to extract complete tool_calls array
+    let tool_calls = extract_json_array_field(json_text, "tool_calls").unwrap_or_else(|| "[]".to_string());
+    let canvas_ops = extract_json_array_field(json_text, "canvas_operations").unwrap_or_else(|| "[]".to_string());
+    let chat_message = extract_json_string_field(json_text, "chat_message");
+
+    let chat_msg_json = match chat_message {
+        Some(msg) => format!("\"{}\"", escape_json_string(&msg)),
+        None => "null".to_string(),
+    };
+
+    Some(format!(
+        r#"{{"reasoning":"{}","plan":"{}","tool_calls":{},"canvas_operations":{},"chat_message":{}}}"#,
+        escape_json_string(&reasoning),
+        escape_json_string(&plan),
+        tool_calls,
+        canvas_ops,
+        chat_msg_json
+    ))
+}
+
+/// Try to close unclosed braces/brackets in truncated JSON.
+fn try_close_braces(text: &str) -> Option<String> {
+    let mut in_string = false;
+    let mut escape_next = false;
+    let mut stack: Vec<char> = Vec::new();
+    let mut last_complete_pos = 0;
+
+    for (i, ch) in text.char_indices() {
+        if escape_next {
+            escape_next = false;
+            continue;
+        }
+        if ch == '\\' && in_string {
+            escape_next = true;
+            continue;
+        }
+        if ch == '"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        match ch {
+            '{' => stack.push('}'),
+            '[' => stack.push(']'),
+            '}' | ']' => {
+                if stack.last() == Some(&ch) {
+                    stack.pop();
+                    if stack.is_empty() {
+                        last_complete_pos = i;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if stack.is_empty() && last_complete_pos > 0 {
+        // Already complete up to last_complete_pos
+        return Some(text[..=last_complete_pos].to_string());
+    }
+
+    // If we're inside a string, close it first, then try to trim back to
+    // a clean position before closing braces
+    let mut result = text.to_string();
+
+    if in_string {
+        // We're inside a string value that was cut off. Truncate to the last
+        // unescaped quote boundary or just close the string.
+        result.push('"');
+    }
+
+    // Close all unclosed brackets/braces in reverse order
+    for closer in stack.iter().rev() {
+        result.push(*closer);
+    }
+
+    Some(result)
+}
+
+/// Extract a string field value from partial JSON like `"field": "value"`.
+fn extract_json_string_field(json: &str, field: &str) -> Option<String> {
+    let pattern = format!("\"{}\"", field);
+    let field_start = json.find(&pattern)?;
+    let after_key = &json[field_start + pattern.len()..];
+
+    // Skip whitespace and colon
+    let after_colon = after_key.trim_start();
+    let after_colon = after_colon.strip_prefix(':')?;
+    let after_colon = after_colon.trim_start();
+
+    if !after_colon.starts_with('"') {
+        return None;
+    }
+
+    // Parse the string value (handling escapes)
+    let mut chars = after_colon[1..].chars();
+    let mut value = String::new();
+    let mut escape = false;
+    for ch in chars.by_ref() {
+        if escape {
+            value.push(ch);
+            escape = false;
+        } else if ch == '\\' {
+            value.push(ch);
+            escape = true;
+        } else if ch == '"' {
+            return Some(unescape_json_string(&value));
+        } else {
+            value.push(ch);
+        }
+    }
+
+    // String was truncated — return what we have
+    Some(unescape_json_string(&value))
+}
+
+/// Extract an array field from partial JSON. Only returns if the array is complete.
+fn extract_json_array_field(json: &str, field: &str) -> Option<String> {
+    let pattern = format!("\"{}\"", field);
+    let field_start = json.find(&pattern)?;
+    let after_key = &json[field_start + pattern.len()..];
+
+    let after_colon = after_key.trim_start();
+    let after_colon = after_colon.strip_prefix(':')?;
+    let after_colon = after_colon.trim_start();
+
+    if !after_colon.starts_with('[') {
+        return None;
+    }
+
+    // Find matching bracket
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape_next = false;
+
+    for (i, ch) in after_colon.char_indices() {
+        if escape_next {
+            escape_next = false;
+            continue;
+        }
+        if ch == '\\' && in_string {
+            escape_next = true;
+            continue;
+        }
+        if ch == '"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        match ch {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    let array_str = &after_colon[..=i];
+                    // Validate it's parseable
+                    if serde_json::from_str::<serde_json::Value>(array_str).is_ok() {
+                        return Some(array_str.to_string());
+                    }
+                    return None;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn escape_json_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+}
+
+fn unescape_json_string(s: &str) -> String {
+    s.replace("\\n", "\n")
+        .replace("\\r", "\r")
+        .replace("\\t", "\t")
+        .replace("\\\"", "\"")
+        .replace("\\\\", "\\")
 }
