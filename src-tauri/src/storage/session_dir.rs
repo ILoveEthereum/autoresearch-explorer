@@ -12,6 +12,10 @@ pub struct SessionMeta {
     pub status: String,
     pub llm_provider: String,
     pub llm_model: String,
+    #[serde(default)]
+    pub question: String,
+    #[serde(default)]
+    pub working_dir: Option<String>,
 }
 
 /// Get the research directory (project root / research /)
@@ -26,6 +30,9 @@ pub fn create_session_dir(
     name: &str,
     template_path: &Path,
     template_name: &str,
+    question: &str,
+    model: &str,
+    working_dir: Option<&str>,
 ) -> Result<(PathBuf, SessionMeta), String> {
     let session_id = format!(
         "{}-{}",
@@ -57,8 +64,10 @@ pub fn create_session_dir(
         last_modified: now,
         total_loops: 0,
         status: "created".to_string(),
-        llm_provider: "deepinfra".to_string(),
-        llm_model: "Qwen/Qwen2.5-72B-Instruct".to_string(),
+        llm_provider: "openrouter".to_string(),
+        llm_model: model.to_string(),
+        question: question.to_string(),
+        working_dir: working_dir.map(|s| s.to_string()),
     };
 
     let meta_json = serde_json::to_string_pretty(&meta)

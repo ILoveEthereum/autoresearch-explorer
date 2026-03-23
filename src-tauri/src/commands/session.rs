@@ -8,7 +8,7 @@ use crate::agent::signals::SignalQueue;
 use crate::canvas::state::CanvasState;
 use crate::llm::client::LlmClient;
 use crate::storage::session_dir::{self, SessionMeta};
-use crate::storage::state_writer::AgentState;
+use crate::storage::state_writer::{self, AgentState};
 use crate::template::parser;
 
 /// Shared state for the active session, managed by Tauri.
@@ -37,13 +37,16 @@ pub async fn create_session(
     question: String,
     api_key: String,
     model: Option<String>,
+    working_dir: Option<String>,
     app: AppHandle,
 ) -> Result<SessionMeta, String> {
     let template_path = PathBuf::from(&template_path);
     let template = parser::parse_template_file(&template_path)?;
 
+    let model_str = model.as_deref().unwrap_or("Qwen/Qwen2.5-72B-Instruct");
+    let wd = working_dir.as_deref();
     let (session_dir, meta) =
-        session_dir::create_session_dir(&name, &template_path, &template.name)?;
+        session_dir::create_session_dir(&name, &template_path, &template.name, &question, model_str, wd)?;
 
     let mut llm_client = LlmClient::new(api_key);
     if let Some(m) = model {
@@ -68,6 +71,7 @@ pub async fn create_session(
 
     let meta_clone = meta.clone();
     let session_name = name.clone();
+    let work_dir = working_dir.map(PathBuf::from);
 
     // Spawn the continuous loop in a background task
     let app_handle = app.clone();
@@ -82,6 +86,7 @@ pub async fn create_session(
             question,
             signal_queue,
             control_rx,
+            working_dir: work_dir,
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
@@ -192,4 +197,96 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
 
     sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     Ok(sessions)
+}
+
+/// Resume a saved session — re-create the agent loop from saved state.
+#[tauri::command]
+pub async fn resume_saved_session(
+    session_id: String,
+    api_key: String,
+    app: AppHandle,
+) -> Result<SessionMeta, String> {
+    let sdir = session_dir::research_dir().join(&session_id);
+    if !sdir.exists() {
+        return Err(format!("Session not found: {}", session_id));
+    }
+
+    // Read meta
+    let meta_str = std::fs::read_to_string(sdir.join("meta.json"))
+        .map_err(|e| format!("Failed to read meta.json: {}", e))?;
+    let mut meta: session_dir::SessionMeta = serde_json::from_str(&meta_str)
+        .map_err(|e| format!("Failed to parse meta.json: {}", e))?;
+
+    // Read state
+    let state_path = sdir.join("state.json");
+    let (canvas_state, agent_state) = if state_path.exists() {
+        let state_str = std::fs::read_to_string(&state_path)
+            .map_err(|e| format!("Failed to read state.json: {}", e))?;
+        let state: state_writer::SessionState = serde_json::from_str(&state_str)
+            .map_err(|e| format!("Failed to parse state.json: {}", e))?;
+        (state.canvas, state.agent)
+    } else {
+        (CanvasState::default(), AgentState::default())
+    };
+
+    // Read template
+    let template_path = sdir.join("template.md");
+    let template = parser::parse_template_file(&template_path)?;
+
+    // Set up LLM client
+    let llm_client = LlmClient::new(api_key).with_model(meta.llm_model.clone());
+
+    let signal_queue = Arc::new(SignalQueue::new());
+    let (control_tx, control_rx) = watch::channel(LoopControl::Run);
+
+    // Stop any existing session
+    {
+        let state = app.state::<AppState>();
+        let mut guard = state.active.lock().await;
+        if let Some(old) = guard.take() {
+            let _ = old.control_tx.send(LoopControl::Stop);
+        }
+        *guard = Some(ActiveSession {
+            control_tx,
+            signal_queue: signal_queue.clone(),
+            session_id: meta.id.clone(),
+        });
+    }
+
+    // Update meta status
+    meta.status = "running".to_string();
+    meta.last_modified = chrono::Utc::now().to_rfc3339();
+    let _ = session_dir::update_meta(&sdir, &meta);
+
+    let meta_clone = meta.clone();
+    let session_name = meta.name.clone();
+    let question = meta.question.clone();
+    let work_dir = meta.working_dir.map(PathBuf::from);
+    let session_dir_clone = sdir.clone();
+
+    // Spawn the agent loop
+    let app_handle = app.clone();
+    tokio::spawn(async move {
+        let mut runner = SessionRunner {
+            session_dir: session_dir_clone,
+            session_name,
+            template,
+            canvas_state,
+            agent_state,
+            llm_client,
+            question,
+            signal_queue,
+            control_rx,
+            working_dir: work_dir,
+        };
+
+        if let Err(e) = runner.run_loop(&app_handle).await {
+            tracing::error!("Resumed agent loop ended with error: {}", e);
+            let _ = tauri::Emitter::emit(&app_handle, "session-error", serde_json::json!({
+                "error": e
+            }));
+        }
+    });
+
+    Ok(meta_clone)
 }

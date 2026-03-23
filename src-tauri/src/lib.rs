@@ -12,6 +12,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(commands::session::AppState::new())
         .invoke_handler(tauri::generate_handler![
             commands::template::list_templates,
@@ -23,9 +24,13 @@ pub fn run() {
             commands::session::load_session,
             commands::session::get_loop_ops,
             commands::session::list_sessions,
+            commands::session::resume_saved_session,
             commands::chat::send_chat,
             commands::chat::send_signal,
+            commands::chat::save_chat,
+            commands::chat::load_chat,
             commands::export::export_file,
+            commands::config::fetch_models,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

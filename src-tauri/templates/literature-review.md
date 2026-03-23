@@ -28,6 +28,10 @@ process:
   tools:
     - web_search
     - web_read
+    - code_executor
+    - file_read
+    - file_write
+    - file_list
 
   stop_conditions:
     - "All identified subtopics have 3+ sources"

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useUiStore } from '../stores/uiStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -18,20 +19,68 @@ const STATUS_LABELS: Record<string, string> = {
 
 export function SessionControls() {
   const setShowTemplateSelector = useUiStore((s) => s.setShowTemplateSelector);
+  const sessionId = useSessionStore((s) => s.sessionId);
   const sessionName = useSessionStore((s) => s.sessionName);
   const status = useSessionStore((s) => s.status);
   const loopCount = useSessionStore((s) => s.loopCount);
   const isRunning = useSessionStore((s) => s.isRunning);
+  const [resuming, setResuming] = useState(false);
 
   const isPaused = status === 'paused';
   const isStopped = status === 'stopped';
   const isActive = sessionName && !isStopped;
 
   const clearSession = useSessionStore((s) => s.clearSession);
+  const setStatus = useSessionStore((s) => s.setStatus);
 
-  const handlePause = () => invoke('pause_session').catch(console.error);
-  const handleResume = () => invoke('resume_session').catch(console.error);
-  const handleStop = () => invoke('stop_session').catch(console.error);
+  const handlePause = async () => {
+    try {
+      await invoke('pause_session');
+      setStatus('paused');
+    } catch (err) {
+      console.error('Pause failed:', err);
+      // Force UI update anyway
+      setStatus('paused');
+    }
+  };
+
+  const handleResume = async () => {
+    try {
+      await invoke('resume_session');
+      setStatus('idle');
+    } catch (err) {
+      console.error('Resume failed:', err);
+    }
+  };
+
+  const handleStop = async () => {
+    try {
+      await invoke('stop_session');
+    } catch (err) {
+      console.error('Stop failed:', err);
+    }
+    // Always update UI to stopped
+    setStatus('stopped');
+  };
+
+  const handleResumeSaved = async () => {
+    if (!sessionId) return;
+    const apiKey = localStorage.getItem('openrouter_api_key');
+    if (!apiKey) {
+      alert('No API key found. Please start a new session first to set your API key.');
+      return;
+    }
+    setResuming(true);
+    try {
+      await invoke('resume_saved_session', { sessionId, apiKey });
+      setStatus('idle');
+    } catch (err) {
+      console.error('Failed to resume:', err);
+      alert(`Failed to resume: ${err}`);
+    } finally {
+      setResuming(false);
+    }
+  };
 
   const handleGoHome = () => {
     // Stop the active session if running
@@ -75,6 +124,25 @@ export function SessionControls() {
       </div>
 
       <div style={styles.right}>
+        {/* Stopped session — show Resume button */}
+        {sessionName && isStopped && (
+          <button
+            style={{ ...styles.controlBtn, ...styles.resumeBtn }}
+            onClick={handleResumeSaved}
+            disabled={resuming}
+            title="Resume agent loop"
+          >
+            {resuming ? (
+              <span style={styles.miniSpinner} />
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 2l9 5-9 5V2z" fill="#22c55e" />
+              </svg>
+            )}
+            {resuming ? 'Resuming...' : 'Resume'}
+          </button>
+        )}
+        {/* Active session — show Pause/Resume + Stop */}
         {isActive && (
           <>
             {isPaused ? (
@@ -204,6 +272,21 @@ const styles: Record<string, React.CSSProperties> = {
   },
   stopBtn: {
     borderColor: '#fecaca',
+  },
+  resumeBtn: {
+    borderColor: '#bbf7d0',
+    background: '#f0fdf4',
+    color: '#16a34a',
+    fontWeight: 600,
+  },
+  miniSpinner: {
+    width: 12,
+    height: 12,
+    border: '2px solid #bbf7d0',
+    borderTopColor: '#16a34a',
+    borderRadius: '50%',
+    animation: 'spin 0.6s linear infinite',
+    display: 'inline-block',
   },
   btn: {
     padding: '6px 14px',

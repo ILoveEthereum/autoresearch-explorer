@@ -2,12 +2,17 @@ use crate::agent::signals::HumanSignal;
 use crate::canvas::state::CanvasState;
 use crate::storage::state_writer::AgentState;
 use crate::template::types::ParsedTemplate;
+use std::path::Path;
 
 /// Build the system prompt from the parsed template.
-pub fn build_system_prompt(template: &ParsedTemplate) -> String {
+pub fn build_system_prompt(template: &ParsedTemplate, working_dir: Option<&Path>) -> String {
     let mut prompt = String::new();
 
     prompt.push_str("You are an autonomous research agent. You are executing the research process defined below.\n\n");
+
+    if let Some(wd) = working_dir {
+        prompt.push_str(&format!("== WORKING DIRECTORY ==\nYour working directory is: {}\nAll file operations (file_read, file_write, file_list) and code execution (code_executor) operate in this directory.\nYou can read existing files, write new files, and run code here.\n\n", wd.display()));
+    }
 
     // Process definition
     prompt.push_str("== PROCESS ==\n");
@@ -66,16 +71,17 @@ pub fn build_system_prompt(template: &ParsedTemplate) -> String {
 }
 
 CRITICAL RULES:
-1. You MUST use tools to gather real information. DO NOT fabricate results, URLs, data, or metrics.
+1. You MUST include at least one tool_call in EVERY response. NEVER return an empty tool_calls array. If you need information, use web_search. If you need to write code, use file_write or code_executor. If you want to check what files exist, use file_list.
 2. On your FIRST loop, use web_search to find real sources about the topic.
 3. After getting search results, use web_read to read the most relevant URLs.
 4. NEVER create "source" nodes with made-up URLs or summaries. Only create source nodes AFTER you have actually read the source using web_read.
 5. NEVER report experiment results or metrics unless you ran actual code using code_executor.
-6. If you have web_search available, you MUST call it at least once every 2 loops.
+6. To write code to the working directory, use file_write with the filename and content. Then use code_executor to run it.
 7. Every node MUST have a unique id (use descriptive ids like "q-main", "src-001", "f-001").
 8. Node type MUST match one of the types defined in the canvas schema.
 9. Use SET_FOCUS to highlight what you're currently working on.
-10. If no tools are needed this loop (e.g., you're synthesizing), set tool_calls to an empty array [].
+10. When building a project, follow this pattern: (a) web_search for implementation details, (b) web_read the best results, (c) file_write to create the code files, (d) code_executor to test them.
+11. ALWAYS use file_write to create files. Do NOT just describe what code should look like — actually write it using the file_write tool.
 "#,
     );
 

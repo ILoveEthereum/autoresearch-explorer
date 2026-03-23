@@ -14,11 +14,26 @@ pub struct ToolResult {
 
 pub struct ToolRegistry {
     session_dir: PathBuf,
+    /// If set, code execution and file ops use this directory
+    /// instead of session_dir/artifacts/
+    working_dir: Option<PathBuf>,
 }
 
 impl ToolRegistry {
-    pub fn new(session_dir: PathBuf) -> Self {
-        Self { session_dir }
+    pub fn new(session_dir: PathBuf, working_dir: Option<PathBuf>) -> Self {
+        Self { session_dir, working_dir }
+    }
+
+    /// The directory where code should execute and files should be read/written.
+    fn code_dir(&self) -> PathBuf {
+        match &self.working_dir {
+            Some(wd) => wd.clone(),
+            None => {
+                let artifacts = self.session_dir.join("artifacts");
+                let _ = std::fs::create_dir_all(&artifacts);
+                artifacts
+            }
+        }
     }
 
     /// Execute a tool by name with the given input.
@@ -63,7 +78,7 @@ impl ToolRegistry {
                     .get("timeout")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(60);
-                code_executor::execute_code(&code, &language, timeout, &self.session_dir).await
+                code_executor::execute_code(&code, &language, timeout, &self.code_dir()).await
             }
             "file_read" => {
                 let path = input
@@ -71,7 +86,7 @@ impl ToolRegistry {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                file_ops::read_file(&path, &self.session_dir)
+                file_ops::read_file(&path, &self.code_dir())
             }
             "file_write" => {
                 let path = input
@@ -84,7 +99,43 @@ impl ToolRegistry {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                file_ops::write_file(&path, &content, &self.session_dir)
+                file_ops::write_file(&path, &content, &self.code_dir())
+            }
+            "file_list" | "list_files" => {
+                let path = input
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                file_ops::list_files(&path, &self.code_dir())
+            }
+            // Handle common LLM aliases
+            "file_system" | "filesystem" => {
+                let action = input
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("read");
+                let path = input
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                match action {
+                    "write" | "create" => {
+                        let content = input
+                            .get("content")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        file_ops::write_file(&path, &content, &self.code_dir())
+                    }
+                    "list" | "ls" => {
+                        file_ops::list_files(&path, &self.code_dir())
+                    }
+                    _ => {
+                        file_ops::read_file(&path, &self.code_dir())
+                    }
+                }
             }
             _ => ToolResult {
                 success: false,
@@ -106,13 +157,16 @@ impl ToolRegistry {
                     desc.push_str("- web_read: Fetch and read a web page. Input: {\"url\": \"https://...\"}\n");
                 }
                 "code_executor" => {
-                    desc.push_str("- code_executor: Run code in a sandbox. Input: {\"code\": \"print('hello')\", \"language\": \"python\", \"timeout\": 60}\n");
+                    desc.push_str("- code_executor: Run code natively on the host machine with full GPU/MPS access. Input: {\"code\": \"print('hello')\", \"language\": \"python\", \"timeout\": 60}. Supported languages: python, javascript, bash, swift.\n");
                 }
                 "file_read" => {
-                    desc.push_str("- file_read: Read a file from the session artifacts. Input: {\"path\": \"filename.txt\"}\n");
+                    desc.push_str("- file_read: Read a file from the working directory. Input: {\"path\": \"filename.txt\"}\n");
                 }
                 "file_write" => {
-                    desc.push_str("- file_write: Write a file to the session artifacts. Input: {\"path\": \"filename.txt\", \"content\": \"...\"}\n");
+                    desc.push_str("- file_write: Write a file to the working directory. Input: {\"path\": \"filename.txt\", \"content\": \"...\"}\n");
+                }
+                "file_list" => {
+                    desc.push_str("- file_list: List files in the working directory. Input: {\"path\": \"\" } (empty for root, or subdirectory name)\n");
                 }
                 _ => {
                     desc.push_str(&format!("- {}: (no description available)\n", tool));

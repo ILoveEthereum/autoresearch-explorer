@@ -33,6 +33,9 @@ pub struct SessionRunner {
     pub question: String,
     pub signal_queue: Arc<SignalQueue>,
     pub control_rx: watch::Receiver<LoopControl>,
+    /// Optional working directory for code execution.
+    /// If set, code runs here instead of session artifacts/.
+    pub working_dir: Option<PathBuf>,
 }
 
 impl SessionRunner {
@@ -113,7 +116,7 @@ impl SessionRunner {
         }));
 
         // Build prompts
-        let system_prompt = context::build_system_prompt(&self.template);
+        let system_prompt = context::build_system_prompt(&self.template, self.working_dir.as_deref());
         let user_message = context::build_user_message_with_signals(
             &self.canvas_state,
             &self.agent_state,
@@ -141,7 +144,7 @@ impl SessionRunner {
         // Execute tools if any were called
         let mut tool_results_text = Vec::new();
         if !response.tool_calls.is_empty() {
-            let tool_registry = ToolRegistry::new(self.session_dir.clone());
+            let tool_registry = ToolRegistry::new(self.session_dir.clone(), self.working_dir.clone());
 
             for tc in &response.tool_calls {
                 let _ = app.emit("agent-status", serde_json::json!({
@@ -171,13 +174,26 @@ impl SessionRunner {
             }));
 
             let followup_message = format!(
-                "{}\n\n== TOOL RESULTS ==\n{}\n\nBased on these tool results, update the canvas with your findings. Create appropriate nodes and edges.",
+                "{}\n\n== TOOL RESULTS ==\n{}\n\nBased on these tool results, you MUST now take action. If the directory is empty, use file_write to create code files. If you found information, use file_write to save it. You can call more tools now (file_write, code_executor, etc). Update the canvas with your findings.",
                 user_message,
                 tool_results_text.join("\n---\n")
             );
 
             match self.llm_client.call(&system_prompt, &followup_message).await {
                 Ok((followup_response, _)) => {
+                    // Execute any additional tool calls from the followup
+                    if !followup_response.tool_calls.is_empty() {
+                        for tc in &followup_response.tool_calls {
+                            tracing::info!("Executing followup tool: {}", tc.tool);
+                            let result = tool_registry.execute(&tc.tool, &tc.input).await;
+                            tracing::info!("Followup tool {} result: success={}, output_len={}", tc.tool, result.success, result.output.len());
+                            tool_results_text.push(format!(
+                                "Tool: {}\nSuccess: {}\nOutput:\n{}\n{}",
+                                tc.tool, result.success, result.output,
+                                result.error.as_ref().map(|e| format!("Error: {}", e)).unwrap_or_default()
+                            ));
+                        }
+                    }
                     // Merge canvas operations from both calls
                     response.canvas_operations.extend(followup_response.canvas_operations);
                     response.reasoning = format!("{}\n\n[After tools]\n{}", response.reasoning, followup_response.reasoning);
@@ -229,6 +245,7 @@ impl SessionRunner {
         let session_state = SessionState {
             canvas: self.canvas_state.clone(),
             agent: self.agent_state.clone(),
+            chat_messages: Vec::new(),
         };
         state_writer::write_state(&self.session_dir, &session_state)?;
 

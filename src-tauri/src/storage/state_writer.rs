@@ -3,9 +3,21 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedChatMessage {
+    pub id: String,
+    pub from: String,  // "user", "agent", "system"
+    pub text: String,
+    #[serde(default)]
+    pub referenced_nodes: Vec<String>,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionState {
     pub canvas: CanvasState,
     pub agent: AgentState,
+    #[serde(default)]
+    pub chat_messages: Vec<SavedChatMessage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

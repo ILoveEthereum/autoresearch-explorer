@@ -20,8 +20,14 @@ export const useSessionStore = create<SessionState>((set) => ({
   loopCount: 0,
   isRunning: false,
 
-  setSession: (id, name) => set({ sessionId: id, sessionName: name, isRunning: true }),
+  setSession: (id, name) => {
+    (window as any).__autoresearch_session_id = id;
+    set({ sessionId: id, sessionName: name, isRunning: true });
+  },
   setStatus: (status) => set({ status, isRunning: status !== 'idle' && status !== 'stopped' }),
   setLoopCount: (count) => set({ loopCount: count }),
-  clearSession: () => set({ sessionId: null, sessionName: null, status: 'idle', loopCount: 0, isRunning: false }),
+  clearSession: () => {
+    (window as any).__autoresearch_session_id = null;
+    set({ sessionId: null, sessionName: null, status: 'idle', loopCount: 0, isRunning: false });
+  },
 }));

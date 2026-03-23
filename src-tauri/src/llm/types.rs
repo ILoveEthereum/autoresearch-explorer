@@ -35,7 +35,8 @@ pub struct ChatCompletionRequest {
     pub messages: Vec<ChatMessage>,
     pub temperature: f32,
     pub max_tokens: u32,
-    pub response_format: ResponseFormat,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<ResponseFormat>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -55,6 +56,8 @@ pub struct ChatCompletionResponse {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Choice {
     pub message: ChoiceMessage,
+    #[serde(default)]
+    pub finish_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -64,7 +67,10 @@ pub struct ChoiceMessage {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Usage {
-    pub prompt_tokens: u32,
-    pub completion_tokens: u32,
-    pub total_tokens: u32,
+    #[serde(default)]
+    pub prompt_tokens: Option<u32>,
+    #[serde(default)]
+    pub completion_tokens: Option<u32>,
+    #[serde(default)]
+    pub total_tokens: Option<u32>,
 }

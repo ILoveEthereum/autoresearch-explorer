@@ -1,8 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 import type { TemplateSummary } from '../types/template';
 import { useCanvasStore } from '../stores/canvasStore';
 import { useSessionStore } from '../stores/sessionStore';
+
+interface ModelInfo {
+  id: string;
+  name: string;
+  context_length: number;
+  pricing: { prompt: string; completion: string };
+}
 
 interface Props {
   onClose: () => void;
@@ -13,22 +21,45 @@ export function TemplateSelector({ onClose }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('Qwen/Qwen2.5-72B-Instruct');
+  const [model, setModel] = useState('qwen/qwen-2.5-72b-instruct');
+  const [workingDir, setWorkingDir] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Model picker state
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelSearch, setModelSearch] = useState('');
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [selectedModelName, setSelectedModelName] = useState('');
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const setSession = useSessionStore((s) => s.setSession);
 
-  const MODELS = [
-    { id: 'Qwen/Qwen2.5-72B-Instruct', name: 'Qwen 2.5 72B Instruct' },
-    { id: 'Qwen/Qwen3-235B-A22B', name: 'Qwen 3 235B (MoE)' },
-    { id: 'deepseek-ai/DeepSeek-V3-0324', name: 'DeepSeek V3' },
-    { id: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct', name: 'Llama 4 Maverick 17B' },
-    { id: 'meta-llama/Meta-Llama-3.1-70B-Instruct', name: 'Llama 3.1 70B Instruct' },
-    { id: 'meta-llama/Meta-Llama-3.1-405B-Instruct', name: 'Llama 3.1 405B Instruct' },
-    { id: 'mistralai/Mistral-Small-24B-Instruct-2501', name: 'Mistral Small 24B' },
-    { id: 'google/gemma-3-27b-it', name: 'Gemma 3 27B' },
-  ];
+  // Fetch models when API key changes (debounced)
+  const fetchModels = useCallback(async (key: string) => {
+    if (!key.trim()) {
+      setModels([]);
+      return;
+    }
+    setFetchingModels(true);
+    try {
+      const result = await invoke<ModelInfo[]>('fetch_models', { apiKey: key });
+      setModels(result);
+      // If we have a saved model, find its name
+      const saved = localStorage.getItem('openrouter_model');
+      if (saved) {
+        const found = result.find((m) => m.id === saved);
+        if (found) setSelectedModelName(found.name);
+      }
+    } catch (err) {
+      console.error('Failed to fetch models:', err);
+      setModels([]);
+    } finally {
+      setFetchingModels(false);
+    }
+  }, []);
 
   useEffect(() => {
     invoke<TemplateSummary[]>('list_templates')
@@ -41,11 +72,74 @@ export function TemplateSelector({ onClose }: Props) {
         setTemplates([]);
       });
 
-    const saved = localStorage.getItem('deepinfra_api_key');
-    if (saved) setApiKey(saved);
-    const savedModel = localStorage.getItem('deepinfra_model');
+    const saved = localStorage.getItem('openrouter_api_key');
+    if (saved) {
+      setApiKey(saved);
+      fetchModels(saved);
+    }
+    const savedModel = localStorage.getItem('openrouter_model');
     if (savedModel) setModel(savedModel);
+    const savedDir = localStorage.getItem('working_dir');
+    if (savedDir) setWorkingDir(savedDir);
+  }, [fetchModels]);
+
+  // Debounced fetch on API key change
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchModels(apiKey);
+    }, 500);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [apiKey, fetchModels]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
+        setShowModelDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  const filteredModels = models.filter(
+    (m) =>
+      m.name.toLowerCase().includes(modelSearch.toLowerCase()) ||
+      m.id.toLowerCase().includes(modelSearch.toLowerCase())
+  );
+
+  const formatContext = (len: number): string => {
+    if (len >= 1_000_000) return `${(len / 1_000_000).toFixed(1)}M`;
+    if (len >= 1_000) return `${Math.round(len / 1_000)}K`;
+    return String(len);
+  };
+
+  const formatPrice = (price: string): string => {
+    const n = parseFloat(price);
+    if (isNaN(n) || n === 0) return 'free';
+    // Price is per token, show per 1M tokens
+    const perMillion = n * 1_000_000;
+    if (perMillion < 0.01) return '<$0.01/M';
+    return `$${perMillion.toFixed(2)}/M`;
+  };
+
+  const selectModel = (m: ModelInfo) => {
+    setModel(m.id);
+    setSelectedModelName(m.name);
+    setModelSearch('');
+    setShowModelDropdown(false);
+  };
+
+  const handleBrowse = async () => {
+    const selected = await open({ directory: true, multiple: false });
+    if (selected && typeof selected === 'string') {
+      setWorkingDir(selected);
+      localStorage.setItem('working_dir', selected);
+    }
+  };
 
   const handleStart = async () => {
     if (!selected || !question.trim() || !apiKey.trim()) return;
@@ -53,8 +147,9 @@ export function TemplateSelector({ onClose }: Props) {
     setLoading(true);
     setError(null);
 
-    localStorage.setItem('deepinfra_api_key', apiKey);
-    localStorage.setItem('deepinfra_model', model);
+    localStorage.setItem('openrouter_api_key', apiKey);
+    localStorage.setItem('openrouter_model', model);
+    if (workingDir) localStorage.setItem('working_dir', workingDir);
 
     useCanvasStore.getState().applyOps([]);
     useCanvasStore.setState({ nodes: [], edges: [], clusters: [], focusNodeId: null });
@@ -66,6 +161,7 @@ export function TemplateSelector({ onClose }: Props) {
         question: question,
         apiKey: apiKey,
         model: model,
+        workingDir: workingDir || null,
       });
 
       setSession(meta.id, meta.name);
@@ -127,25 +223,104 @@ export function TemplateSelector({ onClose }: Props) {
                 ))}
               </select>
             </div>
-            <div style={{ ...styles.field, flex: 1 }}>
-              <label style={styles.label}>Model</label>
-              <select
-                style={styles.select}
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
+            <div style={{ ...styles.field, flex: 1, position: 'relative' }} ref={modelDropdownRef}>
+              <label style={styles.label}>
+                Model
+                {model && <span style={styles.savedBadge}>saved</span>}
+              </label>
+              <div
+                style={{
+                  ...styles.input,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0 12px',
+                  height: 38,
+                }}
+                onClick={() => setShowModelDropdown(!showModelDropdown)}
               >
-                {MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
+                <span style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  color: selectedModelName || model ? '#111827' : '#9ca3af',
+                  fontSize: 13,
+                }}>
+                  {selectedModelName || model || 'Select model...'}
+                </span>
+                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ flexShrink: 0, marginLeft: 4 }}>
+                  <path d="M1 1l4 4 4-4" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              {showModelDropdown && (
+                <div style={styles.dropdown}>
+                  <div style={styles.dropdownSearchWrap}>
+                    <input
+                      style={styles.dropdownSearch}
+                      type="text"
+                      placeholder="Search models..."
+                      value={modelSearch}
+                      onChange={(e) => setModelSearch(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                  <div style={styles.dropdownList}>
+                    {fetchingModels ? (
+                      <div style={styles.dropdownEmpty}>Loading models...</div>
+                    ) : filteredModels.length === 0 ? (
+                      <div style={styles.dropdownEmpty}>
+                        {models.length === 0 ? 'Enter API key to load models' : 'No matches'}
+                      </div>
+                    ) : (
+                      filteredModels.map((m) => (
+                        <div
+                          key={m.id}
+                          style={{
+                            ...styles.dropdownItem,
+                            ...(m.id === model ? styles.dropdownItemSelected : {}),
+                          }}
+                          onClick={() => selectModel(m)}
+                        >
+                          <div style={styles.dropdownItemName}>{m.name}</div>
+                          <div style={styles.dropdownItemMeta}>
+                            <span>{formatContext(m.context_length)} ctx</span>
+                            <span style={styles.metaDot}>&middot;</span>
+                            <span>{formatPrice(m.pricing.prompt)} in</span>
+                            <span style={styles.metaDot}>&middot;</span>
+                            <span>{formatPrice(m.pricing.completion)} out</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           <div style={styles.field}>
             <label style={styles.label}>
-              DeepInfra API Key
+              Working Directory
+              <span style={{ fontSize: 11, fontWeight: 400, color: '#9ca3af' }}>(optional)</span>
+            </label>
+            <div style={styles.browseRow}>
+              <input
+                style={{ ...styles.input, flex: 1 }}
+                type="text"
+                placeholder="Code runs in session artifacts/ by default"
+                value={workingDir}
+                onChange={(e) => setWorkingDir(e.target.value)}
+              />
+              <button style={styles.browseBtn} onClick={handleBrowse} type="button">
+                Browse
+              </button>
+            </div>
+          </div>
+
+          <div style={styles.field}>
+            <label style={styles.label}>
+              OpenRouter API Key
               {apiKey && <span style={styles.savedBadge}>saved</span>}
             </label>
             <input
@@ -265,6 +440,23 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: 12,
   },
+  browseRow: {
+    display: 'flex',
+    gap: 8,
+    alignItems: 'center',
+  },
+  browseBtn: {
+    padding: '10px 14px',
+    border: '1px solid #e5e7eb',
+    borderRadius: 8,
+    background: '#fff',
+    cursor: 'pointer',
+    fontSize: 13,
+    fontWeight: 500,
+    color: '#374151',
+    whiteSpace: 'nowrap' as const,
+    flexShrink: 0,
+  },
   label: {
     display: 'flex',
     alignItems: 'center',
@@ -317,6 +509,73 @@ const styles: Record<string, React.CSSProperties> = {
     outline: 'none',
     background: '#fafafa',
     transition: 'border-color 0.15s, box-shadow 0.15s',
+  },
+  // Model dropdown styles
+  dropdown: {
+    position: 'absolute' as const,
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 4,
+    background: '#fff',
+    border: '1px solid #e5e7eb',
+    borderRadius: 10,
+    boxShadow: '0 12px 40px rgba(0, 0, 0, 0.12)',
+    zIndex: 200,
+    overflow: 'hidden',
+  },
+  dropdownSearchWrap: {
+    padding: '8px 8px 0',
+  },
+  dropdownSearch: {
+    width: '100%',
+    padding: '8px 10px',
+    border: '1px solid #e5e7eb',
+    borderRadius: 6,
+    fontSize: 12,
+    fontFamily: 'inherit',
+    outline: 'none',
+    background: '#fafafa',
+    boxSizing: 'border-box' as const,
+  },
+  dropdownList: {
+    maxHeight: 240,
+    overflowY: 'auto' as const,
+    padding: '4px 0',
+  },
+  dropdownEmpty: {
+    padding: '16px 12px',
+    textAlign: 'center' as const,
+    fontSize: 12,
+    color: '#9ca3af',
+  },
+  dropdownItem: {
+    padding: '8px 12px',
+    cursor: 'pointer',
+    transition: 'background 0.1s',
+    borderBottom: '1px solid #f9fafb',
+  },
+  dropdownItemSelected: {
+    background: '#f0fdf4',
+  },
+  dropdownItemName: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#111827',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+  dropdownItemMeta: {
+    fontSize: 11,
+    color: '#9ca3af',
+    marginTop: 2,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metaDot: {
+    color: '#d1d5db',
   },
   error: {
     margin: '0 24px',

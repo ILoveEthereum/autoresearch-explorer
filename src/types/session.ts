@@ -8,4 +8,5 @@ export interface SessionMeta {
   status: 'running' | 'paused' | 'stopped';
   llmProvider: string;
   llmModel: string;
+  question?: string;
 }

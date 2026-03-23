@@ -33,8 +33,12 @@ process:
       description: "Keep the change if it improved the metric, discard if not"
 
   tools:
+    - web_search
+    - web_read
     - code_executor
-    - file_system
+    - file_read
+    - file_write
+    - file_list
 
   stop_conditions:
     - "5 consecutive failures with no improvement"

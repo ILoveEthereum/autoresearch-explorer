@@ -1,13 +1,14 @@
 use super::registry::ToolResult;
 use std::path::Path;
 
-/// Execute code by writing to a file and running it directly.
-/// For now, runs locally (Docker integration comes later as an enhancement).
+/// Execute code natively on the host machine.
+/// Runs in the provided working directory with full access to
+/// system resources (CPU, RAM, GPU/MPS).
 pub async fn execute_code(
     code: &str,
     language: &str,
     timeout_secs: u64,
-    session_dir: &Path,
+    working_dir: &Path,
 ) -> ToolResult {
     if code.is_empty() {
         return ToolResult {
@@ -17,13 +18,13 @@ pub async fn execute_code(
         };
     }
 
-    let artifacts_dir = session_dir.join("artifacts");
-    let _ = std::fs::create_dir_all(&artifacts_dir);
+    let _ = std::fs::create_dir_all(working_dir);
 
     let (filename, command) = match language {
         "python" | "py" => ("_run.py", vec!["python3", "_run.py"]),
         "javascript" | "js" | "node" => ("_run.js", vec!["node", "_run.js"]),
         "bash" | "sh" => ("_run.sh", vec!["bash", "_run.sh"]),
+        "swift" => ("_run.swift", vec!["swift", "_run.swift"]),
         _ => {
             return ToolResult {
                 success: false,
@@ -34,7 +35,7 @@ pub async fn execute_code(
     };
 
     // Write the code file
-    let code_path = artifacts_dir.join(filename);
+    let code_path = working_dir.join(filename);
     if let Err(e) = std::fs::write(&code_path, code) {
         return ToolResult {
             success: false,
@@ -46,7 +47,7 @@ pub async fn execute_code(
     // Execute with timeout
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(timeout_secs),
-        run_command(&command[0], &command[1..], &artifacts_dir),
+        run_command(&command[0], &command[1..], working_dir),
     )
     .await;
 
@@ -72,7 +73,11 @@ pub async fn execute_code(
             ToolResult {
                 success,
                 output,
-                error: if success { None } else { Some("Process exited with non-zero status".to_string()) },
+                error: if success {
+                    None
+                } else {
+                    Some("Process exited with non-zero status".to_string())
+                },
             }
         }
         Ok(Err(e)) => ToolResult {
