@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useCanvasStore } from '../stores/canvasStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useChatStore } from '../stores/chatStore';
+import { useProjectStore } from '../stores/projectStore';
 import type { CanvasOp } from '../types/canvas';
 
 /**
@@ -44,11 +45,15 @@ export function useTauriEvents() {
 
     async function setup() {
       const u1 = await listenWithRetry<CanvasOp[]>('canvas-ops', (event) => {
-        applyOps(event.payload);
-        // Center on first batch of ops for this session
-        if (isFirstOps) {
-          isFirstOps = false;
-          setTimeout(() => useCanvasStore.getState().centerOnNodes(), 100);
+        // Main canvas ops — only apply when main canvas is active
+        const activeId = useProjectStore.getState().activeCanvasId;
+        if (activeId === 'main') {
+          applyOps(event.payload);
+          // Center on first batch of ops for this session
+          if (isFirstOps) {
+            isFirstOps = false;
+            setTimeout(() => useCanvasStore.getState().centerOnNodes(), 100);
+          }
         }
       });
       if (!cancelled) unlisteners.push(u1);
@@ -83,6 +88,35 @@ export function useTauriEvents() {
         console.log('[Watchdog]', `loop=${event.payload.loop}`, event.payload.verdict);
       });
       if (!cancelled) unlisteners.push(u7);
+
+      // Sub-agent events
+      const u8 = await listenWithRetry<{ canvas_id: string; label: string; status: string }>('sub-agent-spawned', (event) => {
+        console.log('[Sub-Agent Spawned]', event.payload.canvas_id);
+        useProjectStore.getState().addCanvas({
+          id: event.payload.canvas_id,
+          label: event.payload.label,
+          type: 'tool',
+          status: 'building',
+        });
+      });
+      if (!cancelled) unlisteners.push(u8);
+
+      const u9 = await listenWithRetry<{ canvas_id: string; label: string; status: string; error?: string }>('sub-agent-completed', (event) => {
+        console.log('[Sub-Agent Completed]', event.payload.canvas_id, event.payload.status);
+        useProjectStore.getState().updateCanvas(event.payload.canvas_id, {
+          status: event.payload.status === 'ready' ? 'ready' : 'failed',
+        });
+      });
+      if (!cancelled) unlisteners.push(u9);
+
+      // Sub-agent canvas ops — only apply if that canvas is currently active
+      const u10 = await listenWithRetry<{ canvas_id: string; ops: CanvasOp[] }>('sub-agent-canvas-ops', (event) => {
+        const activeId = useProjectStore.getState().activeCanvasId;
+        if (activeId === event.payload.canvas_id) {
+          applyOps(event.payload.ops);
+        }
+      });
+      if (!cancelled) unlisteners.push(u10);
     }
 
     setup();

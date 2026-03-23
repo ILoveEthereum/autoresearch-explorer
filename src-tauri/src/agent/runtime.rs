@@ -14,6 +14,7 @@ use crate::tools::registry::ToolRegistry;
 
 use super::checkpoint;
 use super::signals::SignalQueue;
+use super::sub_agent::{self, SubAgentConfig};
 use super::watchdog::{self, LoopSnapshot, WatchdogVerdict};
 
 /// Control commands sent to the agent loop.
@@ -43,6 +44,10 @@ pub struct SessionRunner {
     pub success_criteria: String,
     /// Consecutive "phase_complete" verdicts from the watchdog.
     pub completion_count: u32,
+    /// API key for creating sub-agent LLM clients.
+    pub api_key: String,
+    /// Model name for creating sub-agent LLM clients.
+    pub model: String,
 }
 
 impl SessionRunner {
@@ -184,12 +189,29 @@ impl SessionRunner {
                                 ));
                                 self.completion_count = 0;
                             }
-                            WatchdogVerdict::StuckNoInfo { .. }
-                            | WatchdogVerdict::StuckCodeError { .. } => {
+                            WatchdogVerdict::StuckNoInfo { ref description } => {
                                 self.agent_state.replan_hint = Some(
                                     "WATCHDOG ALERT: You appear stuck. Try a different strategy or tool.".to_string(),
                                 );
                                 self.completion_count = 0;
+
+                                // Attempt to spawn a tool-builder sub-agent
+                                self.maybe_spawn_tool_builder(
+                                    app,
+                                    &format!("Agent is stuck: {}. Build a tool that can help.", description),
+                                ).await;
+                            }
+                            WatchdogVerdict::StuckCodeError { ref error } => {
+                                self.agent_state.replan_hint = Some(
+                                    "WATCHDOG ALERT: You appear stuck. Try a different strategy or tool.".to_string(),
+                                );
+                                self.completion_count = 0;
+
+                                // Attempt to spawn a tool-builder sub-agent
+                                self.maybe_spawn_tool_builder(
+                                    app,
+                                    &format!("Agent is stuck on code error: {}. Build a tool to solve this.", error),
+                                ).await;
                             }
                             WatchdogVerdict::NeedsHuman { question } => {
                                 let _ = app.emit(
@@ -243,6 +265,132 @@ impl SessionRunner {
                 canvas_ops_count: 0,      // Not tracked in LoopSummary; plan/outcome suffice
             })
             .collect()
+    }
+
+    /// Ask the LLM what tool would help, then spawn a sub-agent to build it.
+    async fn maybe_spawn_tool_builder(&self, app: &AppHandle, context: &str) {
+        // Quick LLM call to determine what tool is needed
+        let prompt = format!(
+            r#"A research agent is stuck. Context: {}
+
+Suggest a specific tool that could help. Reply with ONLY valid JSON:
+{{"tool_name": "snake_case_name", "description": "one line description of what the tool should do"}}
+
+If no specific tool would help, reply: {{"tool_name": "none", "description": "none"}}"#,
+            context
+        );
+
+        let tool_suggestion = match self
+            .llm_client
+            .call_raw_with_max_tokens(&prompt, 150)
+            .await
+        {
+            Ok(text) => text,
+            Err(e) => {
+                tracing::warn!("Failed to get tool suggestion: {}", e);
+                return;
+            }
+        };
+
+        // Parse the suggestion
+        let suggestion: serde_json::Value = match serde_json::from_str(
+            tool_suggestion
+                .trim()
+                .trim_start_matches("```json")
+                .trim_start_matches("```")
+                .trim_end_matches("```")
+                .trim(),
+        ) {
+            Ok(v) => v,
+            Err(_) => {
+                tracing::warn!("Could not parse tool suggestion: {}", tool_suggestion);
+                return;
+            }
+        };
+
+        let tool_name = suggestion
+            .get("tool_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("none");
+
+        if tool_name == "none" {
+            tracing::info!("Watchdog: no tool suggestion for stuck agent");
+            return;
+        }
+
+        let description = suggestion
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        let sub_id = format!("tool-{}", tool_name);
+
+        // Check if this sub-agent canvas already exists
+        let canvas_dir = self
+            .working_dir
+            .join(".autoresearch")
+            .join("canvases")
+            .join(&sub_id);
+        if canvas_dir.exists() {
+            tracing::info!("Sub-agent '{}' already exists, skipping spawn", sub_id);
+            return;
+        }
+
+        let config = SubAgentConfig {
+            id: sub_id.clone(),
+            label: format!("Build: {}", tool_name),
+            prompt: description.to_string(),
+            max_loops: 20,
+        };
+
+        // Add a tool-building node to the main canvas
+        let tb_node = crate::canvas::state::StoredNode {
+            id: format!("sub-agent-{}", tool_name),
+            node_type: "finding".to_string(),
+            title: format!("Tool Builder: {}", tool_name),
+            summary: format!("Sub-agent building tool: {}", description),
+            status: "active".to_string(),
+            fields: {
+                let mut f = std::collections::HashMap::new();
+                f.insert(
+                    "sub_agent_id".to_string(),
+                    serde_json::Value::String(sub_id),
+                );
+                f
+            },
+            cluster: None,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            loop_index: Some(self.agent_state.current_loop),
+        };
+
+        // We can't mutate self.canvas_state here since we only have &self,
+        // so we just emit the node as a canvas op for the frontend
+        let _ = app.emit(
+            "canvas-ops",
+            serde_json::json!([{
+                "op": "ADD_NODE",
+                "node": {
+                    "id": tb_node.id,
+                    "type": tb_node.node_type,
+                    "title": tb_node.title,
+                    "summary": tb_node.summary,
+                    "status": tb_node.status,
+                    "fields": tb_node.fields,
+                }
+            }]),
+        );
+
+        if let Err(e) = sub_agent::spawn_sub_agent(
+            config,
+            &self.working_dir,
+            &self.api_key,
+            &self.model,
+            app,
+        )
+        .await
+        {
+            tracing::error!("Failed to spawn sub-agent: {}", e);
+        }
     }
 
     /// Run a single agent loop iteration.

@@ -27,6 +27,8 @@ pub fn run() {
             commands::session::resume_saved_session,
             commands::session::list_checkpoints,
             commands::session::branch_from_checkpoint,
+            commands::session::list_canvases,
+            commands::session::get_canvas_state,
             commands::chat::send_chat,
             commands::chat::send_signal,
             commands::chat::save_chat,

@@ -5,6 +5,7 @@ import { DetailPanel } from './panels/DetailPanel';
 import { ChatPanel } from './panels/ChatPanel';
 import { HistorySlider } from './panels/HistorySlider';
 import { HomeScreen } from './panels/HomeScreen';
+import { ProjectTree } from './panels/ProjectTree';
 import { TemplateSelector } from './panels/TemplateSelector';
 import { useUiStore } from './stores/uiStore';
 import { useSessionStore } from './stores/sessionStore';
@@ -84,6 +85,7 @@ function App() {
       <SessionControls />
       <div style={styles.main}>
         {sessionId && <ChatPanel />}
+        {sessionId && <ProjectTree />}
         <div style={styles.canvasContainer}>
           <CompletionBanner />
           <CanvasView />

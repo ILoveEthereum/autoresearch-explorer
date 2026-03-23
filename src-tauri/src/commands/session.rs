@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
@@ -47,12 +48,14 @@ pub async fn create_session(
     let template_path = PathBuf::from(&template_path);
     let template = parser::parse_template_file(&template_path)?;
 
-    let model_str = model.as_deref().unwrap_or("Qwen/Qwen2.5-72B-Instruct");
+    let model_str = model.as_deref().unwrap_or("Qwen/Qwen2.5-72B-Instruct").to_string();
     let sc = success_criteria.as_deref().unwrap_or("");
     let ml = max_loops.unwrap_or(50);
     let (session_dir, meta) =
-        session_dir::create_session_dir(&name, &template_path, &template.name, &question, model_str, &working_dir, sc, ml)?;
+        session_dir::create_session_dir(&name, &template_path, &template.name, &question, &model_str, &working_dir, sc, ml)?;
 
+    let api_key_clone = api_key.clone();
+    let model_clone = model_str.clone();
     let mut llm_client = LlmClient::new(api_key);
     if let Some(m) = model {
         llm_client = llm_client.with_model(m);
@@ -96,6 +99,8 @@ pub async fn create_session(
             max_loops: ml,
             success_criteria: sc_owned,
             completion_count: 0,
+            api_key: api_key_clone,
+            model: model_clone,
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
@@ -249,6 +254,7 @@ pub async fn resume_saved_session(
     let template = parser::parse_template_file(&template_path)?;
 
     // Set up LLM client
+    let api_key_clone = api_key.clone();
     let llm_client = LlmClient::new(api_key).with_model(meta.llm_model.clone());
 
     let signal_queue = Arc::new(SignalQueue::new());
@@ -280,6 +286,7 @@ pub async fn resume_saved_session(
     let session_max_loops = meta.max_loops;
     let session_success_criteria = meta.success_criteria.clone();
     let session_dir_clone = canvas_dir.clone();
+    let model_clone = meta.llm_model.clone();
 
     // Spawn the agent loop
     let app_handle = app.clone();
@@ -298,6 +305,8 @@ pub async fn resume_saved_session(
             max_loops: session_max_loops,
             success_criteria: session_success_criteria,
             completion_count: 0,
+            api_key: api_key_clone,
+            model: model_clone,
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
@@ -375,6 +384,8 @@ pub async fn branch_from_checkpoint(
     let template = parser::parse_template_file(&template_path)?;
 
     // Set up LLM client
+    let api_key_clone = api_key.clone();
+    let model_clone = parent_meta.llm_model.clone();
     let llm_client = LlmClient::new(api_key).with_model(parent_meta.llm_model.clone());
 
     let signal_queue = Arc::new(SignalQueue::new());
@@ -436,6 +447,8 @@ pub async fn branch_from_checkpoint(
             max_loops: ml,
             success_criteria: sc,
             completion_count: 0,
+            api_key: api_key_clone,
+            model: model_clone,
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
@@ -447,4 +460,89 @@ pub async fn branch_from_checkpoint(
     });
 
     Ok(branch_meta_clone)
+}
+
+/// A canvas entry visible to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CanvasEntry {
+    pub id: String,
+    pub label: String,
+    #[serde(rename = "type")]
+    pub canvas_type: String,
+    pub status: String,
+}
+
+/// List all canvases for a session (main + any sub-agent canvases).
+#[tauri::command]
+pub fn list_canvases(session_id: String) -> Result<Vec<CanvasEntry>, String> {
+    let entry = global_index::find_by_id(&session_id)?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let canvases_dir = PathBuf::from(&entry.path)
+        .join(".autoresearch")
+        .join("canvases");
+
+    let mut entries = vec![CanvasEntry {
+        id: "main".to_string(),
+        label: "Main Research".to_string(),
+        canvas_type: "main".to_string(),
+        status: "active".to_string(),
+    }];
+
+    if let Ok(dirs) = std::fs::read_dir(&canvases_dir) {
+        for dir_entry in dirs.flatten() {
+            let name = dir_entry.file_name().to_string_lossy().to_string();
+            if name == "main" {
+                continue;
+            }
+            if dir_entry.path().is_dir() {
+                let canvas_type = if name.starts_with("tool-") {
+                    "tool"
+                } else if name.contains("branch") {
+                    "branch"
+                } else {
+                    "tool"
+                };
+
+                // Check state.json for status info
+                let state_path = dir_entry.path().join("state.json");
+                let status = if state_path.exists() { "ready" } else { "building" };
+
+                entries.push(CanvasEntry {
+                    id: name.clone(),
+                    label: name.replace('-', " "),
+                    canvas_type: canvas_type.to_string(),
+                    status: status.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(entries)
+}
+
+/// Get the canvas state for a specific canvas.
+#[tauri::command]
+pub fn get_canvas_state(session_id: String, canvas_id: String) -> Result<serde_json::Value, String> {
+    let entry = global_index::find_by_id(&session_id)?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let state_path = PathBuf::from(&entry.path)
+        .join(".autoresearch")
+        .join("canvases")
+        .join(&canvas_id)
+        .join("state.json");
+
+    if !state_path.exists() {
+        return Ok(serde_json::json!({
+            "canvas": { "nodes": [], "edges": [], "clusters": [] },
+            "agent": { "current_loop": 0, "recent_history": [], "history_summary": "" },
+            "chat_messages": []
+        }));
+    }
+
+    let state_str = std::fs::read_to_string(&state_path)
+        .map_err(|e| format!("Failed to read state.json: {}", e))?;
+    let state: serde_json::Value = serde_json::from_str(&state_str)
+        .map_err(|e| format!("Failed to parse state.json: {}", e))?;
+
+    Ok(state)
 }
