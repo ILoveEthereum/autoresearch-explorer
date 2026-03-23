@@ -34,6 +34,21 @@ export interface Viewport {
   zoom: number;
 }
 
+export interface FieldDef {
+  name: string;
+  field_type: string;
+  description: string;
+}
+
+export interface NodeTypeDefinition {
+  type_name: string;
+  label: string;
+  shape: string;
+  color: string;
+  fields: FieldDef[];
+  description: string;
+}
+
 export type CanvasOp =
   | { op: 'ADD_NODE'; node: Omit<CanvasNode, 'position' | 'pinned'> & { position_hint?: PositionHint } }
   | { op: 'UPDATE_NODE'; id: string; status?: string; summary?: string; fields?: Record<string, unknown> }
@@ -41,6 +56,7 @@ export type CanvasOp =
   | { op: 'ADD_EDGE'; edge: CanvasEdge }
   | { op: 'REMOVE_EDGE'; from: string; to: string }
   | { op: 'ADD_CLUSTER'; id: string; label: string; children: string[] }
+  | { op: 'DEFINE_NODE_TYPE'; type_name: string; label: string; shape?: string; color?: string; fields: FieldDef[]; description: string }
   | { op: 'SET_FOCUS'; nodeId: string }
   | { op: 'SNAPSHOT' };
 

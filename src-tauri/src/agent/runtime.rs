@@ -509,11 +509,16 @@ If no specific tool would help, reply: {{"tool_name": "none", "description": "no
             "loop": loop_index
         }));
 
-        // Build prompts
-        let system_prompt = context::build_system_prompt_with_experience(
+        // Build prompts — include any custom node types the agent has defined
+        let custom_types: Vec<_> = self.canvas_state.node_types.iter()
+            .filter(|nt| !self.template.canvas.node_types.contains_key(&nt.type_name))
+            .cloned()
+            .collect();
+        let system_prompt = context::build_system_prompt_full(
             &self.template,
             Some(self.working_dir.as_path()),
             &self.past_experience,
+            &custom_types,
         );
         let user_message = context::build_user_message_with_signals(
             &self.canvas_state,

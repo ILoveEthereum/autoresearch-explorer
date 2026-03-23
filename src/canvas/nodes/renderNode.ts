@@ -1,15 +1,40 @@
-import type { CanvasNode } from '../../types/canvas';
+import type { CanvasNode, NodeTypeDefinition } from '../../types/canvas';
 import type { DetailLevel } from '../semanticZoom';
 import { NODE_COLORS, TEXT_PRIMARY, TEXT_SECONDARY, FOCUS_COLOR, SELECTION_COLOR } from './nodeColors';
-import { drawRoundedRect, drawDiamond, drawHighlightedBox, drawDashedBox } from './shapes';
+import { drawRoundedRect, drawDiamond, drawHighlightedBox, drawDashedBox, drawHexagon, drawCylinder } from './shapes';
+import { useCanvasStore } from '../../stores/canvasStore';
 
 export const NODE_WIDTH = 240;
 export const NODE_BASE_HEIGHT = 60;
 const DIAMOND_SIZE = 140;
 const RADIUS = 6;
 
+/** Convert a hex or hsl color to a light tint for the node fill. */
+function colorToFillAndBorder(color: string): { fill: string; border: string } {
+  // For hex colors, create a light tint
+  if (color.startsWith('#')) {
+    return { fill: color + '18', border: color };
+  }
+  // For hsl colors, create a light tint by increasing lightness
+  const hslMatch = color.match(/hsl\((\d+),\s*(\d+)%?,\s*(\d+)%?\)/);
+  if (hslMatch) {
+    const [, h, s] = hslMatch;
+    return {
+      fill: `hsl(${h}, ${s}%, 95%)`,
+      border: color,
+    };
+  }
+  return { fill: '#f9fafb', border: color };
+}
+
+/** Look up the type definition for a node. */
+function getTypeDef(node: CanvasNode): NodeTypeDefinition | undefined {
+  return useCanvasStore.getState().nodeTypes.find((t) => t.type_name === node.type);
+}
+
 export function getNodeBounds(node: CanvasNode): { x: number; y: number; w: number; h: number } {
-  if (node.type === 'question' || node.fields?.shape === 'diamond') {
+  const shape = getShape(node);
+  if (shape === 'diamond') {
     return {
       x: node.position.x - DIAMOND_SIZE / 2,
       y: node.position.y - DIAMOND_SIZE / 2,
@@ -33,7 +58,11 @@ export function renderNode(
   isSelected: boolean,
   detailLevel: DetailLevel = 'close'
 ) {
-  const colors = NODE_COLORS[node.status] || NODE_COLORS.queued;
+  const typeDef = getTypeDef(node);
+  const typeColors = typeDef ? colorToFillAndBorder(typeDef.color) : null;
+  // Use type-based color if available, fall back to status-based
+  const statusColors = NODE_COLORS[node.status] || NODE_COLORS.queued;
+  const colors = typeColors || statusColors;
   const bounds = getNodeBounds(node);
 
   // Far zoom: just a colored dot
@@ -56,7 +85,8 @@ export function renderNode(
     ctx.shadowColor = FOCUS_COLOR;
     ctx.shadowBlur = 12;
     ctx.beginPath();
-    if (node.type === 'question') {
+    const shape = getShape(node);
+    if (shape === 'diamond') {
       ctx.arc(node.position.x, node.position.y, DIAMOND_SIZE / 2, 0, Math.PI * 2);
     } else {
       ctx.roundRect(bounds.x - 4, bounds.y - 4, bounds.w + 8, bounds.h + 8, RADIUS + 2);
@@ -77,7 +107,16 @@ export function renderNode(
       drawHighlightedBox(ctx, bounds.x, bounds.y, bounds.w, bounds.h, RADIUS, colors.fill, colors.border);
       break;
     case 'dashed_box':
-      drawDashedBox(ctx, bounds.x, bounds.y, bounds.w, bounds.h, RADIUS, '#fffbeb', '#f59e0b');
+      drawDashedBox(ctx, bounds.x, bounds.y, bounds.w, bounds.h, RADIUS, colors.fill, colors.border);
+      break;
+    case 'hexagon':
+      drawHexagon(ctx, node.position.x, node.position.y, bounds.w, bounds.h, colors.fill, colors.border);
+      break;
+    case 'cylinder':
+      drawCylinder(ctx, bounds.x, bounds.y, bounds.w, bounds.h, colors.fill, colors.border);
+      break;
+    case 'rounded':
+      drawRoundedRect(ctx, bounds.x, bounds.y, bounds.w, bounds.h, RADIUS * 2, colors.fill, colors.border);
       break;
     default:
       drawRoundedRect(ctx, bounds.x, bounds.y, bounds.w, bounds.h, RADIUS, colors.fill, colors.border);
@@ -109,6 +148,12 @@ export function renderNode(
 }
 
 function getShape(node: CanvasNode): string {
+  // Check if there's a type definition with a shape
+  const typeDef = getTypeDef(node);
+  if (typeDef) {
+    return typeDef.shape;
+  }
+  // Legacy fallback for built-in types without a definition
   switch (node.type) {
     case 'question': return 'diamond';
     case 'finding':  return 'highlighted_box';

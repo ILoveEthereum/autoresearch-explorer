@@ -1,5 +1,5 @@
 use crate::agent::signals::HumanSignal;
-use crate::canvas::state::CanvasState;
+use crate::canvas::state::{CanvasState, NodeTypeDefinition};
 use crate::storage::state_writer::AgentState;
 use crate::template::types::ParsedTemplate;
 use std::path::Path;
@@ -10,10 +10,21 @@ pub fn build_system_prompt(template: &ParsedTemplate, working_dir: Option<&Path>
 }
 
 /// Build the system prompt with optional past experience from skill docs.
+/// Also accepts custom node types to include in the prompt (from canvas state).
 pub fn build_system_prompt_with_experience(
     template: &ParsedTemplate,
     working_dir: Option<&Path>,
     skill_doc_paths: &[String],
+) -> String {
+    build_system_prompt_full(template, working_dir, skill_doc_paths, &[])
+}
+
+/// Full system prompt builder with dynamic node types support.
+pub fn build_system_prompt_full(
+    template: &ParsedTemplate,
+    working_dir: Option<&Path>,
+    skill_doc_paths: &[String],
+    custom_node_types: &[NodeTypeDefinition],
 ) -> String {
     let mut prompt = String::new();
 
@@ -33,7 +44,7 @@ pub fn build_system_prompt_with_experience(
 
     // Canvas schema
     prompt.push_str("\n== CANVAS SCHEMA ==\n");
-    prompt.push_str("You MUST emit canvas operations using ONLY these types.\n\n");
+    prompt.push_str("You can use the following node types, or define NEW ones with DEFINE_NODE_TYPE.\n\n");
     prompt.push_str("Node types:\n");
     for (name, def) in &template.canvas.node_types {
         prompt.push_str(&format!(
@@ -45,6 +56,19 @@ pub fn build_system_prompt_with_experience(
         }
         prompt.push('\n');
     }
+
+    // Include any custom node types defined during this session
+    if !custom_node_types.is_empty() {
+        prompt.push_str("\nCustom node types (defined this session):\n");
+        for nt in custom_node_types {
+            let field_names: Vec<&str> = nt.fields.iter().map(|f| f.name.as_str()).collect();
+            prompt.push_str(&format!(
+                "- {} ({}): shape={}, color={}, fields={:?} — {}\n",
+                nt.type_name, nt.label, nt.shape, nt.color, field_names, nt.description
+            ));
+        }
+    }
+
     prompt.push_str("\nEdge types:\n");
     for (name, def) in &template.canvas.edge_types {
         prompt.push_str(&format!(
@@ -74,6 +98,7 @@ pub fn build_system_prompt_with_experience(
     {"op": "ADD_NODE", "node": {"id": "unique-id", "type": "node_type_from_schema", "title": "...", "summary": "...", "status": "active|completed|queued", "fields": {...}}},
     {"op": "ADD_EDGE", "edge": {"id": "edge-id", "from": "node-id", "to": "node-id", "type": "edge_type_from_schema", "label": "optional"}},
     {"op": "UPDATE_NODE", "id": "node-id", "status": "completed", "summary": "updated text"},
+    {"op": "DEFINE_NODE_TYPE", "type_name": "custom_type", "label": "Custom Type", "shape": "hexagon", "color": "purple", "fields": [{"name": "field1", "field_type": "text", "description": "A field"}], "description": "What this type represents"},
     {"op": "SET_FOCUS", "nodeId": "node-id"}
   ],
   "chat_message": "optional message to the human, or null"
@@ -87,7 +112,7 @@ CRITICAL RULES:
 5. NEVER report experiment results or metrics unless you ran actual code using code_executor.
 6. To write code to the working directory, use file_write with the filename and content. Then use code_executor to run it.
 7. Every node MUST have a unique id (use descriptive ids like "q-main", "src-001", "f-001").
-8. Node type MUST match one of the types defined in the canvas schema.
+8. Node type MUST match one of the types defined in the canvas schema, OR you can define a new type first using DEFINE_NODE_TYPE. Available shapes: box, diamond, rounded, hexagon, cylinder. Available field_types: text, number, code, url, list.
 9. Use SET_FOCUS to highlight what you're currently working on.
 10. When building a project, follow this pattern: (a) web_search for implementation details, (b) web_read the best results, (c) file_write to create the code files, (d) code_executor to test them.
 11. ALWAYS use file_write to create files. Do NOT just describe what code should look like — actually write it using the file_write tool.

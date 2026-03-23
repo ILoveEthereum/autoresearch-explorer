@@ -4,7 +4,8 @@ import { useUiStore } from '../stores/uiStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useCanvasStore } from '../stores/canvasStore';
 import { useChatStore, type ChatMessage } from '../stores/chatStore';
-import type { CanvasNode, CanvasEdge, CanvasCluster } from '../types/canvas';
+import type { CanvasNode, CanvasEdge, CanvasCluster, NodeTypeDefinition } from '../types/canvas';
+import { BUILTIN_NODE_TYPES } from '../stores/canvasStore';
 import type { SessionMeta } from '../types/session';
 
 export function HomeScreen() {
@@ -29,6 +30,7 @@ export function HomeScreen() {
         nodes: CanvasNode[];
         edges: CanvasEdge[];
         clusters: CanvasCluster[];
+        node_types?: NodeTypeDefinition[];
       };
       agent: { current_loop: number };
     }>('load_session', { sessionId: session.id });
@@ -55,6 +57,7 @@ export function HomeScreen() {
         style: e.style,
       })),
       clusters: state.canvas.clusters || [],
+      nodeTypes: state.canvas.node_types || [...BUILTIN_NODE_TYPES],
       focusNodeId: null,
     });
 

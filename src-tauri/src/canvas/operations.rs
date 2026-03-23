@@ -2,6 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FieldDef {
+    pub name: String,
+    pub field_type: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op")]
 #[allow(non_camel_case_types)]
 pub enum CanvasOp {
@@ -32,6 +39,17 @@ pub enum CanvasOp {
         id: String,
         label: String,
         children: Vec<String>,
+    },
+    DEFINE_NODE_TYPE {
+        type_name: String,
+        label: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        shape: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        color: Option<String>,
+        #[serde(default)]
+        fields: Vec<FieldDef>,
+        description: String,
     },
     SET_FOCUS {
         #[serde(rename = "nodeId", alias = "id")]

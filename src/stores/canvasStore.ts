@@ -1,11 +1,80 @@
 import { create } from 'zustand';
-import type { CanvasNode, CanvasEdge, CanvasCluster, Viewport, CanvasOp } from '../types/canvas';
+import type { CanvasNode, CanvasEdge, CanvasCluster, Viewport, CanvasOp, NodeTypeDefinition } from '../types/canvas';
 import { runLayout, type LayoutMode } from '../canvas/layout/layoutEngine';
+
+/** Generate a deterministic color from a type name (matches the Rust implementation). */
+function defaultColorForType(typeName: string): string {
+  let hash = 0;
+  for (let i = 0; i < typeName.length; i++) {
+    hash = (Math.imul(hash, 31) + typeName.charCodeAt(i)) >>> 0;
+  }
+  const hue = hash % 360;
+  return `hsl(${hue}, 65%, 55%)`;
+}
+
+/** Built-in node type definitions matching the backend defaults. */
+export const BUILTIN_NODE_TYPES: NodeTypeDefinition[] = [
+  {
+    type_name: 'question', label: 'Question', shape: 'diamond', color: '#3b82f6',
+    fields: [
+      { name: 'text', field_type: 'text', description: 'The research question' },
+      { name: 'status', field_type: 'text', description: 'Question status (open/resolved)' },
+    ],
+    description: 'A research question to investigate',
+  },
+  {
+    type_name: 'finding', label: 'Finding', shape: 'rounded', color: '#f59e0b',
+    fields: [
+      { name: 'claim', field_type: 'text', description: 'The finding claim' },
+      { name: 'confidence', field_type: 'number', description: 'Confidence level (1-5)' },
+    ],
+    description: 'A conclusion or finding from research',
+  },
+  {
+    type_name: 'source', label: 'Source', shape: 'box', color: '#22c55e',
+    fields: [
+      { name: 'title', field_type: 'text', description: 'Source title' },
+      { name: 'url', field_type: 'url', description: 'Source URL' },
+      { name: 'relevance', field_type: 'number', description: 'Relevance score' },
+    ],
+    description: 'A source of information (paper, article, etc.)',
+  },
+  {
+    type_name: 'experiment', label: 'Experiment', shape: 'box', color: '#8b5cf6',
+    fields: [
+      { name: 'hypothesis', field_type: 'text', description: 'What is being tested' },
+      { name: 'result', field_type: 'text', description: 'Experiment result' },
+    ],
+    description: 'An experiment or test',
+  },
+  {
+    type_name: 'checkpoint', label: 'Checkpoint', shape: 'box', color: '#f97316',
+    fields: [{ name: 'summary', field_type: 'text', description: 'Checkpoint summary' }],
+    description: 'A research checkpoint',
+  },
+  {
+    type_name: 'tool_building', label: 'Tool Building', shape: 'box', color: '#06b6d4',
+    fields: [
+      { name: 'tool_name', field_type: 'text', description: 'Name of the tool' },
+      { name: 'status', field_type: 'text', description: 'Build status' },
+    ],
+    description: 'A tool being built during research',
+  },
+  {
+    type_name: 'gap', label: 'Gap', shape: 'dashed_box', color: '#ec4899',
+    fields: [
+      { name: 'description', field_type: 'text', description: 'What is missing' },
+      { name: 'importance', field_type: 'text', description: 'How important this gap is' },
+    ],
+    description: 'A gap in knowledge or research',
+  },
+];
 
 interface CanvasState {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   clusters: CanvasCluster[];
+  nodeTypes: NodeTypeDefinition[];
   viewport: Viewport;
   focusNodeId: string | null;
   layoutMode: LayoutMode;
@@ -14,13 +83,16 @@ interface CanvasState {
   setLayoutMode: (mode: LayoutMode) => void;
   centerOnNodes: () => void;
   applyOps: (ops: CanvasOp[]) => void;
+  defineNodeType: (def: NodeTypeDefinition) => void;
+  getNodeType: (typeName: string) => NodeTypeDefinition | undefined;
   addTestNodes: () => void;
 }
 
-export const useCanvasStore = create<CanvasState>((set) => ({
+export const useCanvasStore = create<CanvasState>((set, get) => ({
   nodes: [],
   edges: [],
   clusters: [],
+  nodeTypes: [...BUILTIN_NODE_TYPES],
   viewport: { x: 0, y: 0, zoom: 1 },
   focusNodeId: null,
   layoutMode: 'left_to_right',
@@ -49,11 +121,28 @@ export const useCanvasStore = create<CanvasState>((set) => ({
       };
     }),
 
+  defineNodeType: (def) =>
+    set((state) => {
+      const existing = state.nodeTypes.findIndex((t) => t.type_name === def.type_name);
+      const updated = [...state.nodeTypes];
+      if (existing >= 0) {
+        updated[existing] = def;
+      } else {
+        updated.push(def);
+      }
+      return { nodeTypes: updated };
+    }),
+
+  getNodeType: (typeName) => {
+    return get().nodeTypes.find((t) => t.type_name === typeName);
+  },
+
   applyOps: (ops) =>
     set((state) => {
       let nodes = [...state.nodes];
       let edges = [...state.edges];
       let clusters = [...state.clusters];
+      let nodeTypes = [...state.nodeTypes];
       let focusNodeId = state.focusNodeId;
 
       for (const op of ops) {
@@ -101,6 +190,25 @@ export const useCanvasStore = create<CanvasState>((set) => ({
           case 'ADD_CLUSTER':
             clusters = [...clusters, { id: op.id, label: op.label, children: op.children, collapsed: false }];
             break;
+          case 'DEFINE_NODE_TYPE': {
+            const resolvedColor = op.color || defaultColorForType(op.type_name);
+            const resolvedShape = op.shape || 'box';
+            const newDef: NodeTypeDefinition = {
+              type_name: op.type_name,
+              label: op.label,
+              shape: resolvedShape,
+              color: resolvedColor,
+              fields: op.fields,
+              description: op.description,
+            };
+            const idx = nodeTypes.findIndex((t) => t.type_name === op.type_name);
+            if (idx >= 0) {
+              nodeTypes[idx] = newDef;
+            } else {
+              nodeTypes = [...nodeTypes, newDef];
+            }
+            break;
+          }
           case 'SET_FOCUS':
             focusNodeId = op.nodeId;
             break;
@@ -119,7 +227,7 @@ export const useCanvasStore = create<CanvasState>((set) => ({
         });
       }
 
-      return { nodes, edges, clusters, focusNodeId };
+      return { nodes, edges, clusters, nodeTypes, focusNodeId };
     }),
 
   addTestNodes: () =>

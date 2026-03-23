@@ -8,21 +8,25 @@ import { QuestionDetail } from './detail/QuestionDetail';
 import { CheckpointDetail } from './detail/CheckpointDetail';
 import { ToolBuildingDetail } from './detail/ToolBuildingDetail';
 import { GenericDetail } from './detail/GenericDetail';
+import { DynamicDetail } from './detail/DynamicDetail';
 import { ConnectionsList } from './detail/ConnectionsList';
 import { LoopContext } from './detail/LoopContext';
 
-const KNOWN_TYPES = ['source', 'finding', 'experiment', 'question', 'checkpoint', 'tool_building'];
+const SPECIALIZED_TYPES = ['source', 'finding', 'experiment', 'question', 'checkpoint', 'tool_building'];
 
 export function DetailPanel() {
   const selectedNodeId = useUiStore((s) => s.selectedNodeId);
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
+  const nodeTypes = useCanvasStore((s) => s.nodeTypes);
 
   const node = nodes.find((n) => n.id === selectedNodeId);
   if (!node) return null;
 
-  const typeColor = TYPE_COLORS[node.type] || '#6b7280';
+  const typeDef = nodeTypes.find((t) => t.type_name === node.type);
+  const typeColor = typeDef?.color || TYPE_COLORS[node.type] || '#6b7280';
   const statusColor = STATUS_COLORS[node.status] || '#6b7280';
+  const typeLabel = typeDef?.label || node.type;
 
   return (
     <div style={styles.panel}>
@@ -36,7 +40,7 @@ export function DetailPanel() {
               background: typeColor + '18',
             }}
           >
-            {node.type}
+            {typeLabel}
           </span>
           <span
             style={{
@@ -76,7 +80,8 @@ export function DetailPanel() {
       {node.type === 'question' && <QuestionDetail node={node} edges={edges} />}
       {node.type === 'checkpoint' && <CheckpointDetail node={node} />}
       {node.type === 'tool_building' && <ToolBuildingDetail node={node} />}
-      {!KNOWN_TYPES.includes(node.type) && <GenericDetail node={node} />}
+      {!SPECIALIZED_TYPES.includes(node.type) && typeDef && <DynamicDetail node={node} typeDef={typeDef} />}
+      {!SPECIALIZED_TYPES.includes(node.type) && !typeDef && <GenericDetail node={node} />}
 
       {/* Common footer */}
       <ConnectionsList node={node} edges={edges} />
