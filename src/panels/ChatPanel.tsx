@@ -118,16 +118,12 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
 const styles: Record<string, React.CSSProperties> = {
   panel: {
-    width: 320,
-    borderLeft: '1px solid #e5e7eb',
-    background: '#fff',
     display: 'flex',
     flexDirection: 'column',
-    flexShrink: 0,
+    height: '100%',
   },
   header: {
-    padding: '12px 16px',
-    borderBottom: '1px solid #f3f4f6',
+    display: 'none',
   },
   title: {
     margin: 0,

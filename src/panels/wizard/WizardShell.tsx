@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { TemplateSummary } from '../../types/template';
 import { useCanvasStore } from '../../stores/canvasStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useUiStore } from '../../stores/uiStore';
 
 import { StepQuestion } from './StepQuestion';
 import { StepSuccess } from './StepSuccess';
@@ -32,7 +33,8 @@ export function WizardShell({ onClose }: Props) {
   // Wizard state
   const [question, setQuestion] = useState('');
   const [successCriteria, setSuccessCriteria] = useState('');
-  const [approach, setApproach] = useState('explore');
+  const uiDefaultApproach = useUiStore((s) => s.defaultApproach);
+  const [approach, setApproach] = useState(uiDefaultApproach || 'explore');
   const [maxLoops, setMaxLoops] = useState(50);
   const [workingDir, setWorkingDir] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -45,6 +47,7 @@ export function WizardShell({ onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const setSession = useSessionStore((s) => s.setSession);
+  const setDefaultApproach = useUiStore((s) => s.setDefaultApproach);
 
   // Load saved values & templates
   useEffect(() => {
@@ -123,6 +126,7 @@ export function WizardShell({ onClose }: Props) {
       });
 
       setSession(meta.id, meta.name);
+      setDefaultApproach(null);
       onClose();
     } catch (err) {
       setError(String(err));

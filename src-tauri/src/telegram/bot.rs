@@ -177,10 +177,9 @@ impl TelegramBot {
     }
 }
 
-/// Load telegram config from ~/.autoresearch/config.json
+/// Load telegram config from the app data directory config.json
 pub fn load_config() -> Option<TelegramConfig> {
-    let home = dirs_next::home_dir()?;
-    let config_path = home.join(".autoresearch").join("config.json");
+    let config_path = crate::storage::app_data_dir().join("config.json");
     let data = std::fs::read_to_string(config_path).ok()?;
     let val: serde_json::Value = serde_json::from_str(&data).ok()?;
 
@@ -211,10 +210,9 @@ pub fn load_config() -> Option<TelegramConfig> {
     })
 }
 
-/// Save telegram config to ~/.autoresearch/config.json
+/// Save telegram config to the app data directory config.json
 pub fn save_config(config: &TelegramConfig) -> Result<(), String> {
-    let home = dirs_next::home_dir().ok_or("Could not find home directory")?;
-    let config_dir = home.join(".autoresearch");
+    let config_dir = crate::storage::app_data_dir();
     std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
     let config_path = config_dir.join("config.json");
 

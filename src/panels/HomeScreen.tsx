@@ -11,11 +11,11 @@ export function HomeScreen() {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [resumingId, setResumingId] = useState<string | null>(null);
-  const sessionId = useSessionStore((s) => s.sessionId);
   const setSession = useSessionStore((s) => s.setSession);
   const setLoopCount = useSessionStore((s) => s.setLoopCount);
   const setStatus = useSessionStore((s) => s.setStatus);
   const setShowTemplateSelector = useUiStore((s) => s.setShowTemplateSelector);
+  const setActivePanel = useUiStore((s) => s.setActivePanel);
 
   useEffect(() => {
     invoke<SessionMeta[]>('list_sessions')
@@ -33,7 +33,6 @@ export function HomeScreen() {
       agent: { current_loop: number };
     }>('load_session', { sessionId: session.id });
 
-    // Populate canvas store with saved state
     useCanvasStore.setState({
       nodes: state.canvas.nodes.map((n: any) => ({
         id: n.id,
@@ -59,7 +58,6 @@ export function HomeScreen() {
       focusNodeId: null,
     });
 
-    // Trigger layout and center
     const store = useCanvasStore.getState();
     store.applyOps([]);
     setTimeout(() => useCanvasStore.getState().centerOnNodes(), 100);
@@ -87,6 +85,7 @@ export function HomeScreen() {
       setSession(session.id, session.name);
       setLoopCount(loopCount);
       setStatus('stopped');
+      setActivePanel(null); // Close overlay
     } catch (err) {
       console.error('Failed to load session:', err);
       alert(`Failed to load session: ${err}`);
@@ -101,7 +100,6 @@ export function HomeScreen() {
       const loopCount = await loadCanvasState(session);
       await loadChatMessages(session.id);
 
-      // Get API key from localStorage
       const apiKey = localStorage.getItem('openrouter_api_key');
       if (!apiKey) {
         alert('No API key found. Please start a new session first to set your API key.');
@@ -109,7 +107,6 @@ export function HomeScreen() {
         return;
       }
 
-      // Resume the agent loop on the backend
       await invoke('resume_saved_session', {
         sessionId: session.id,
         apiKey,
@@ -118,6 +115,7 @@ export function HomeScreen() {
       setSession(session.id, session.name);
       setLoopCount(loopCount);
       setStatus('idle');
+      setActivePanel(null); // Close overlay
     } catch (err) {
       console.error('Failed to resume session:', err);
       alert(`Failed to resume session: ${err}`);
@@ -126,73 +124,56 @@ export function HomeScreen() {
     }
   };
 
-  // Don't show home screen if a session is active
-  if (sessionId) return null;
-
   return (
     <div style={styles.container}>
-      <div style={styles.inner}>
-        <div style={styles.hero}>
-          <h1 style={styles.title}>Autoresearch</h1>
-          <p style={styles.subtitle}>
-            AI-powered research with a live visual canvas
-          </p>
-          <button style={styles.startBtn} onClick={() => setShowTemplateSelector(true)}>
-            New Research Session
-          </button>
-        </div>
-
-        {sessions.length > 0 && (
-          <div style={styles.history}>
-            <h2 style={styles.historyTitle}>Recent Sessions</h2>
-            <div style={styles.sessionList}>
-              {sessions.map((s) => (
-                <div key={s.id} style={styles.sessionCard}>
-                  <button
-                    style={styles.sessionClickArea}
-                    onClick={() => loadSession(s)}
-                    disabled={loadingId === s.id || resumingId === s.id}
-                  >
-                    <div style={styles.sessionInfo}>
-                      <div style={styles.sessionName}>
-                        {loadingId === s.id ? 'Loading...' : s.name}
-                      </div>
-                      <div style={styles.sessionMeta}>
-                        {s.templateName} &middot; {s.totalLoops} loops &middot; {formatDate(s.lastModified)}
-                      </div>
-                    </div>
-                    <div style={styles.sessionStatus}>
-                      <span style={{
-                        ...styles.statusDot,
-                        background: s.status === 'running' ? '#22c55e' : s.status === 'paused' ? '#f59e0b' : '#9ca3af',
-                      }} />
-                      {s.status}
-                    </div>
-                  </button>
-                  <button
-                    style={styles.resumeBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      resumeSession(s);
-                    }}
-                    disabled={resumingId === s.id}
-                    title="Resume this session's agent loop"
-                  >
-                    {resumingId === s.id ? (
-                      <span style={styles.miniSpinner} />
-                    ) : (
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                        <path d="M2 1l8 5-8 5V1z" fill="#22c55e" />
-                      </svg>
-                    )}
-                    Resume
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+      <div style={styles.hero}>
+        <h2 style={styles.title}>Autoresearch</h2>
+        <p style={styles.subtitle}>AI-powered research with a live visual canvas</p>
+        <button style={styles.startBtn} onClick={() => setShowTemplateSelector(true)}>
+          New Session
+        </button>
       </div>
+
+      {sessions.length > 0 && (
+        <div style={styles.history}>
+          <div style={styles.historyTitle}>Recent Sessions</div>
+          <div style={styles.sessionList}>
+            {sessions.map((s) => (
+              <div key={s.id} style={styles.sessionCard}>
+                <button
+                  style={styles.sessionClickArea}
+                  onClick={() => loadSession(s)}
+                  disabled={loadingId === s.id || resumingId === s.id}
+                >
+                  <div style={styles.sessionName}>
+                    {loadingId === s.id ? 'Loading...' : s.name}
+                  </div>
+                  <div style={styles.sessionMeta}>
+                    {s.totalLoops} loops &middot; {formatDate(s.lastModified)}
+                  </div>
+                </button>
+                <button
+                  style={styles.resumeBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    resumeSession(s);
+                  }}
+                  disabled={resumingId === s.id}
+                  title="Resume"
+                >
+                  {resumingId === s.id ? (
+                    <span style={styles.miniSpinner} />
+                  ) : (
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                      <path d="M2 1l6 4-6 4V1z" fill="#22c55e" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -217,75 +198,64 @@ function formatDate(iso: string): string {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    position: 'absolute',
-    inset: 0,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 5,
-    background: '#fafafa',
-  },
-  inner: {
-    width: 500,
-    maxHeight: '80vh',
-    overflowY: 'auto',
+    padding: '16px 14px',
   },
   hero: {
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 20,
   },
   title: {
-    fontSize: 32,
+    fontSize: 18,
     fontWeight: 800,
     color: '#111827',
     letterSpacing: '-0.03em',
     margin: 0,
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 12,
     color: '#9ca3af',
-    margin: '8px 0 24px',
+    margin: '4px 0 14px',
   },
   startBtn: {
-    padding: '12px 28px',
+    padding: '8px 20px',
     border: 'none',
-    borderRadius: 10,
+    borderRadius: 8,
     background: '#111827',
     color: '#fff',
     cursor: 'pointer',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 600,
+    fontFamily: 'inherit',
   },
-  history: {},
+  history: {
+    marginTop: 4,
+  },
   historyTitle: {
-    fontSize: 13,
+    fontSize: 10,
     fontWeight: 600,
     color: '#9ca3af',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
-    margin: '0 0 12px',
+    marginBottom: 8,
   },
   sessionList: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: 8,
+    gap: 4,
   },
   sessionCard: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    width: '100%',
-    background: '#fff',
-    border: '1px solid #e5e7eb',
-    borderRadius: 10,
+    gap: 4,
+    background: '#f9fafb',
+    borderRadius: 8,
     overflow: 'hidden',
   },
   sessionClickArea: {
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column' as const,
     flex: 1,
-    padding: '12px 16px',
+    padding: '8px 10px',
     background: 'none',
     border: 'none',
     cursor: 'pointer',
@@ -293,12 +263,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'inherit',
     minWidth: 0,
   },
-  sessionInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
   sessionName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 600,
     color: '#111827',
     overflow: 'hidden',
@@ -306,39 +272,21 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const,
   },
   sessionMeta: {
-    fontSize: 12,
-    color: '#9ca3af',
-    marginTop: 2,
-  },
-  sessionStatus: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
     fontSize: 11,
-    color: '#6b7280',
-    fontWeight: 500,
-    flexShrink: 0,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: '50%',
+    color: '#9ca3af',
+    marginTop: 1,
   },
   resumeBtn: {
     display: 'flex',
     alignItems: 'center',
-    gap: 5,
-    padding: '8px 12px',
-    marginRight: 8,
+    justifyContent: 'center',
+    width: 28,
+    height: 28,
+    marginRight: 6,
     border: '1px solid #d1fae5',
     borderRadius: 6,
     background: '#f0fdf4',
     cursor: 'pointer',
-    fontSize: 11,
-    fontWeight: 600,
-    color: '#16a34a',
-    fontFamily: 'inherit',
-    whiteSpace: 'nowrap' as const,
     flexShrink: 0,
   },
   miniSpinner: {

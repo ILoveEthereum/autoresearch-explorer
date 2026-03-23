@@ -27,6 +27,16 @@ const APPROACHES: ApproachOption[] = [
     label: 'ML optimization',
     description: 'Modify \u2192 run \u2192 evaluate \u2192 decide',
   },
+  {
+    id: 'tool-builder',
+    label: 'Build a tool',
+    description: 'Design \u2192 implement \u2192 test a custom tool',
+  },
+  {
+    id: 'skill-builder',
+    label: 'Build a skill',
+    description: 'Research \u2192 synthesize \u2192 write a skill doc',
+  },
 ];
 
 interface Props {
@@ -88,6 +98,10 @@ export function approachToTemplate(approach: string): string {
       return 'literature-review';
     case 'ml':
       return 'ml-optimization';
+    case 'tool-builder':
+      return 'tool-builder';
+    case 'skill-builder':
+      return 'skill-builder';
     case 'explore':
     default:
       return 'general-research';

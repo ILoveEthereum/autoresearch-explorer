@@ -2,12 +2,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { CanvasView } from './canvas/CanvasView';
 import { SessionControls } from './panels/SessionControls';
 import { DetailPanel } from './panels/DetailPanel';
-import { ChatPanel } from './panels/ChatPanel';
+import { IconRail } from './panels/IconRail';
+import { OverlayPanel } from './panels/OverlayPanel';
 import { HistorySlider } from './panels/HistorySlider';
-import { HomeScreen } from './panels/HomeScreen';
-import { ProjectTree } from './panels/ProjectTree';
 import { TemplateSelector } from './panels/TemplateSelector';
-import { Settings } from './panels/Settings';
 import { useUiStore } from './stores/uiStore';
 import { useSessionStore } from './stores/sessionStore';
 import { useTauriEvents } from './hooks/useTauriEvents';
@@ -76,8 +74,6 @@ function App() {
   const showDetailPanel = useUiStore((s) => s.showDetailPanel);
   const showTemplateSelector = useUiStore((s) => s.showTemplateSelector);
   const setShowTemplateSelector = useUiStore((s) => s.setShowTemplateSelector);
-  const showSettings = useUiStore((s) => s.showSettings);
-  const setShowSettings = useUiStore((s) => s.setShowSettings);
   const sessionId = useSessionStore((s) => s.sessionId);
 
   useTauriEvents();
@@ -87,21 +83,22 @@ function App() {
     <div style={styles.app}>
       <SessionControls />
       <div style={styles.main}>
-        {sessionId && <ChatPanel />}
-        {sessionId && <ProjectTree />}
-        <div style={styles.canvasContainer}>
-          <CompletionBanner />
-          <CanvasView />
-          {sessionId && <HistorySlider />}
-          {!sessionId && <HomeScreen />}
+        <IconRail />
+        <div style={styles.canvasWrapper}>
+          <OverlayPanel />
+          <div style={styles.canvasArea}>
+            <CompletionBanner />
+            <CanvasView />
+            {sessionId && <HistorySlider />}
+          </div>
         </div>
         {showDetailPanel && <DetailPanel />}
       </div>
       {showTemplateSelector && (
-        <TemplateSelector onClose={() => setShowTemplateSelector(false)} />
-      )}
-      {showSettings && (
-        <Settings onClose={() => setShowSettings(false)} />
+        <TemplateSelector onClose={() => {
+          setShowTemplateSelector(false);
+          useUiStore.getState().setDefaultApproach(null);
+        }} />
       )}
     </div>
   );
@@ -119,9 +116,14 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     overflow: 'hidden',
   },
-  canvasContainer: {
+  canvasWrapper: {
     flex: 1,
     position: 'relative',
+    overflow: 'hidden',
+  },
+  canvasArea: {
+    position: 'absolute',
+    inset: 0,
     overflow: 'hidden',
   },
 };

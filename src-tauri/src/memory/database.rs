@@ -17,8 +17,7 @@ pub struct MemoryDb {
 
 impl MemoryDb {
     pub fn open() -> Result<Self, String> {
-        let home = dirs_next::home_dir().ok_or("Could not determine home directory")?;
-        let db_dir = home.join(".autoresearch");
+        let db_dir = crate::storage::app_data_dir();
         std::fs::create_dir_all(&db_dir).map_err(|e| e.to_string())?;
         let path = db_dir.join("memory.db");
 

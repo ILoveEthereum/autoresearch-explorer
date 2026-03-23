@@ -40,6 +40,7 @@ pub fn run() {
             commands::config::fetch_models,
             commands::memory::search_memory,
             commands::memory::list_available_tools,
+            commands::memory::list_skill_docs,
             commands::telegram::save_telegram_config,
             commands::telegram::load_telegram_config,
             commands::telegram::test_telegram_connection,

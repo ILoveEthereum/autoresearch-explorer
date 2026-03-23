@@ -14,10 +14,10 @@ pub struct SessionEntry {
     pub question: String,
 }
 
-/// Returns `~/.autoresearch/sessions.json`.
+/// Returns the path to sessions.json in the app data directory.
 pub fn index_path() -> Result<PathBuf, String> {
-    let home = dirs_next::home_dir().ok_or("Could not determine home directory")?;
-    Ok(home.join(".autoresearch").join("sessions.json"))
+    let dir = super::app_data_dir();
+    Ok(dir.join("sessions.json"))
 }
 
 /// Read the global session index. Returns empty vec if file doesn't exist.
@@ -38,7 +38,7 @@ fn write_index(entries: &[SessionEntry]) -> Result<(), String> {
     let path = index_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create ~/.autoresearch/: {}", e))?;
+            .map_err(|e| format!("Failed to create app data dir: {}", e))?;
     }
     let json = serde_json::to_string_pretty(entries)
         .map_err(|e| format!("Failed to serialize sessions index: {}", e))?;
