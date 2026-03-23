@@ -2,19 +2,21 @@ use crate::llm::client::LlmClient;
 use std::path::Path;
 
 /// Update the overview.md file after each loop.
+///
+/// `canvas_dir` — where loops live (e.g. `.autoresearch/canvases/main/`)
+/// `overview_path` — where to write the overview (e.g. `{working_dir}/overview.md`)
 pub async fn update_overview(
-    session_dir: &Path,
+    canvas_dir: &Path,
+    overview_path: &Path,
     loop_index: u32,
     session_name: &str,
     llm_client: &LlmClient,
 ) -> Result<(), String> {
-    let overview_path = session_dir.join("overview.md");
-
     // Read current overview
-    let current_overview = std::fs::read_to_string(&overview_path).unwrap_or_default();
+    let current_overview = std::fs::read_to_string(overview_path).unwrap_or_default();
 
     // Read the latest loop's files
-    let loop_dir = session_dir.join("loops").join(format!("{:03}", loop_index));
+    let loop_dir = canvas_dir.join("loops").join(format!("{:03}", loop_index));
     let process = std::fs::read_to_string(loop_dir.join("process.md")).unwrap_or_default();
     let explanation = std::fs::read_to_string(loop_dir.join("explanation.md")).unwrap_or_default();
 

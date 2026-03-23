@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use super::global_index::{self, SessionEntry};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionMeta {
     pub id: String,
@@ -14,25 +16,26 @@ pub struct SessionMeta {
     pub llm_model: String,
     #[serde(default)]
     pub question: String,
-    #[serde(default)]
-    pub working_dir: Option<String>,
+    /// The user-chosen working directory — this IS the session root.
+    pub working_dir: String,
 }
 
-/// Get the research directory (project root / research /)
-pub fn research_dir() -> PathBuf {
-    let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    dir.push("research");
-    dir
-}
-
-/// Create a new session directory with all subdirectories.
+/// Create a new session inside `working_dir`.
+///
+/// Directory layout:
+///   {working_dir}/.autoresearch/meta.json
+///   {working_dir}/.autoresearch/canvases/main/loops/
+///   {working_dir}/.autoresearch/canvases/main/state.json
+///   {working_dir}/.autoresearch/chat.json
+///   {working_dir}/.autoresearch/sources/
+///   {working_dir}/overview.md
 pub fn create_session_dir(
     name: &str,
     template_path: &Path,
     template_name: &str,
     question: &str,
     model: &str,
-    working_dir: Option<&str>,
+    working_dir: &str,
 ) -> Result<(PathBuf, SessionMeta), String> {
     let session_id = format!(
         "{}-{}",
@@ -40,19 +43,27 @@ pub fn create_session_dir(
         &uuid::Uuid::new_v4().to_string()[..8]
     );
 
-    let dir = research_dir().join(&session_id);
+    let wd = PathBuf::from(working_dir);
+    let dot_dir = wd.join(".autoresearch");
+    let canvas_dir = dot_dir.join("canvases").join("main");
 
     // Create directory structure
-    std::fs::create_dir_all(dir.join("loops"))
+    std::fs::create_dir_all(canvas_dir.join("loops"))
         .map_err(|e| format!("Failed to create session directory: {}", e))?;
-    std::fs::create_dir_all(dir.join("sources"))
+    std::fs::create_dir_all(dot_dir.join("sources"))
         .map_err(|e| format!("Failed to create sources directory: {}", e))?;
-    std::fs::create_dir_all(dir.join("artifacts"))
-        .map_err(|e| format!("Failed to create artifacts directory: {}", e))?;
 
     // Copy template
-    std::fs::copy(template_path, dir.join("template.md"))
+    std::fs::copy(template_path, dot_dir.join("template.md"))
         .map_err(|e| format!("Failed to copy template: {}", e))?;
+
+    // Create empty state.json
+    std::fs::write(canvas_dir.join("state.json"), "{}")
+        .map_err(|e| format!("Failed to write initial state.json: {}", e))?;
+
+    // Create empty chat.json
+    std::fs::write(dot_dir.join("chat.json"), "[]")
+        .map_err(|e| format!("Failed to write initial chat.json: {}", e))?;
 
     // Create meta.json
     let now = chrono::Utc::now().to_rfc3339();
@@ -61,36 +72,57 @@ pub fn create_session_dir(
         name: name.to_string(),
         template_name: template_name.to_string(),
         created_at: now.clone(),
-        last_modified: now,
+        last_modified: now.clone(),
         total_loops: 0,
         status: "created".to_string(),
         llm_provider: "openrouter".to_string(),
         llm_model: model.to_string(),
         question: question.to_string(),
-        working_dir: working_dir.map(|s| s.to_string()),
+        working_dir: working_dir.to_string(),
     };
 
     let meta_json = serde_json::to_string_pretty(&meta)
         .map_err(|e| format!("Failed to serialize meta: {}", e))?;
-    std::fs::write(dir.join("meta.json"), meta_json)
+    std::fs::write(dot_dir.join("meta.json"), meta_json)
         .map_err(|e| format!("Failed to write meta.json: {}", e))?;
 
-    // Create empty overview.md
+    // Create overview.md in the working dir root (visible to user)
     std::fs::write(
-        dir.join("overview.md"),
+        wd.join("overview.md"),
         format!("# {} — Research Overview\n\n**Status:** Starting...\n", name),
     )
     .map_err(|e| format!("Failed to write overview.md: {}", e))?;
 
-    Ok((dir, meta))
+    // Register in global index
+    global_index::add_to_index(SessionEntry {
+        id: meta.id.clone(),
+        name: meta.name.clone(),
+        path: working_dir.to_string(),
+        last_modified: now,
+        status: "created".to_string(),
+        llm_model: model.to_string(),
+        question: question.to_string(),
+    })?;
+
+    // Return the internal session dir (.autoresearch/canvases/main/)
+    Ok((canvas_dir, meta))
 }
 
-/// Update the meta.json file
-pub fn update_meta(session_dir: &Path, meta: &SessionMeta) -> Result<(), String> {
+/// Update the meta.json file inside .autoresearch/
+pub fn update_meta(working_dir: &Path, meta: &SessionMeta) -> Result<(), String> {
+    let meta_path = working_dir.join(".autoresearch").join("meta.json");
     let meta_json = serde_json::to_string_pretty(meta)
         .map_err(|e| format!("Failed to serialize meta: {}", e))?;
-    std::fs::write(session_dir.join("meta.json"), meta_json)
+    std::fs::write(&meta_path, meta_json)
         .map_err(|e| format!("Failed to write meta.json: {}", e))?;
+
+    // Also update the global index
+    let _ = global_index::update_in_index(
+        &meta.id,
+        Some(&meta.status),
+        Some(&meta.last_modified),
+    );
+
     Ok(())
 }
 

@@ -1,8 +1,10 @@
 use tauri::{AppHandle, Manager};
 
+use std::path::PathBuf;
+
 use crate::agent::signals::HumanSignal;
 use crate::commands::session::AppState;
-use crate::storage::session_dir;
+use crate::storage::global_index;
 
 #[tauri::command]
 pub async fn send_chat(
@@ -26,13 +28,12 @@ pub async fn send_chat(
 /// Save chat messages to chat.json in the session directory.
 #[tauri::command]
 pub fn save_chat(session_id: String, messages: serde_json::Value) -> Result<(), String> {
-    let session_dir = session_dir::research_dir().join(&session_id);
-    if !session_dir.exists() {
-        return Err(format!("Session directory not found: {}", session_id));
-    }
+    let entry = global_index::find_by_id(&session_id)?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let chat_path = PathBuf::from(&entry.path).join(".autoresearch/chat.json");
     let json = serde_json::to_string_pretty(&messages)
         .map_err(|e| format!("Failed to serialize chat: {}", e))?;
-    std::fs::write(session_dir.join("chat.json"), json)
+    std::fs::write(&chat_path, json)
         .map_err(|e| format!("Failed to write chat.json: {}", e))?;
     Ok(())
 }
@@ -40,7 +41,9 @@ pub fn save_chat(session_id: String, messages: serde_json::Value) -> Result<(), 
 /// Load chat messages from chat.json in the session directory.
 #[tauri::command]
 pub fn load_chat(session_id: String) -> Result<serde_json::Value, String> {
-    let chat_path = session_dir::research_dir().join(&session_id).join("chat.json");
+    let entry = global_index::find_by_id(&session_id)?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let chat_path = PathBuf::from(&entry.path).join(".autoresearch/chat.json");
     if !chat_path.exists() {
         return Ok(serde_json::json!([]));
     }

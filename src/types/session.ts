@@ -9,4 +9,5 @@ export interface SessionMeta {
   llmProvider: string;
   llmModel: string;
   question?: string;
+  working_dir: string;
 }

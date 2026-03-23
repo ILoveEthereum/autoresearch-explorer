@@ -33,9 +33,8 @@ pub struct SessionRunner {
     pub question: String,
     pub signal_queue: Arc<SignalQueue>,
     pub control_rx: watch::Receiver<LoopControl>,
-    /// Optional working directory for code execution.
-    /// If set, code runs here instead of session artifacts/.
-    pub working_dir: Option<PathBuf>,
+    /// The user-chosen working directory — this IS the session root.
+    pub working_dir: PathBuf,
 }
 
 impl SessionRunner {
@@ -116,7 +115,7 @@ impl SessionRunner {
         }));
 
         // Build prompts
-        let system_prompt = context::build_system_prompt(&self.template, self.working_dir.as_deref());
+        let system_prompt = context::build_system_prompt(&self.template, Some(self.working_dir.as_path()));
         let user_message = context::build_user_message_with_signals(
             &self.canvas_state,
             &self.agent_state,
@@ -144,7 +143,7 @@ impl SessionRunner {
         // Execute tools if any were called
         let mut tool_results_text = Vec::new();
         if !response.tool_calls.is_empty() {
-            let tool_registry = ToolRegistry::new(self.session_dir.clone(), self.working_dir.clone());
+            let tool_registry = ToolRegistry::new(self.session_dir.clone(), Some(self.working_dir.clone()));
 
             for tc in &response.tool_calls {
                 let _ = app.emit("agent-status", serde_json::json!({
@@ -250,13 +249,13 @@ impl SessionRunner {
         state_writer::write_state(&self.session_dir, &session_state)?;
 
         // Update meta.json
-        let meta_path = self.session_dir.join("meta.json");
+        let meta_path = self.working_dir.join(".autoresearch").join("meta.json");
         if let Ok(meta_str) = std::fs::read_to_string(&meta_path) {
             if let Ok(mut meta) = serde_json::from_str::<session_dir::SessionMeta>(&meta_str) {
                 meta.total_loops = loop_index;
                 meta.last_modified = chrono::Utc::now().to_rfc3339();
                 meta.status = "running".to_string();
-                let _ = session_dir::update_meta(&self.session_dir, &meta);
+                let _ = session_dir::update_meta(&self.working_dir, &meta);
             }
         }
 
@@ -265,14 +264,16 @@ impl SessionRunner {
             "status": "updating_overview",
             "loop": loop_index
         }));
+        let overview_path = self.working_dir.join("overview.md");
         let _ = overview_writer::update_overview(
             &self.session_dir,
+            &overview_path,
             loop_index,
             &self.session_name,
             &self.llm_client,
         ).await;
         let _ = app.emit("overview-updated", serde_json::json!({
-            "path": self.session_dir.join("overview.md").to_string_lossy()
+            "path": overview_path.to_string_lossy()
         }));
 
         // Emit loop completed

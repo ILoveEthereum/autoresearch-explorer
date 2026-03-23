@@ -8,6 +8,7 @@ use crate::agent::signals::SignalQueue;
 use crate::canvas::state::CanvasState;
 use crate::llm::client::LlmClient;
 use crate::storage::session_dir::{self, SessionMeta};
+use crate::storage::global_index;
 use crate::storage::state_writer::{self, AgentState};
 use crate::template::parser;
 
@@ -37,16 +38,15 @@ pub async fn create_session(
     question: String,
     api_key: String,
     model: Option<String>,
-    working_dir: Option<String>,
+    working_dir: String,
     app: AppHandle,
 ) -> Result<SessionMeta, String> {
     let template_path = PathBuf::from(&template_path);
     let template = parser::parse_template_file(&template_path)?;
 
     let model_str = model.as_deref().unwrap_or("Qwen/Qwen2.5-72B-Instruct");
-    let wd = working_dir.as_deref();
     let (session_dir, meta) =
-        session_dir::create_session_dir(&name, &template_path, &template.name, &question, model_str, wd)?;
+        session_dir::create_session_dir(&name, &template_path, &template.name, &question, model_str, &working_dir)?;
 
     let mut llm_client = LlmClient::new(api_key);
     if let Some(m) = model {
@@ -71,7 +71,7 @@ pub async fn create_session(
 
     let meta_clone = meta.clone();
     let session_name = name.clone();
-    let work_dir = working_dir.map(PathBuf::from);
+    let work_dir = PathBuf::from(&working_dir);
 
     // Spawn the continuous loop in a background task
     let app_handle = app.clone();
@@ -139,8 +139,12 @@ pub async fn stop_session(app: AppHandle) -> Result<(), String> {
 /// Get canvas operations for a specific loop.
 #[tauri::command]
 pub fn get_loop_ops(session_id: String, loop_index: u32) -> Result<serde_json::Value, String> {
-    let session_dir = session_dir::research_dir().join(&session_id);
-    let ops_path = session_dir.join("loops").join(format!("{:03}", loop_index)).join("canvas-ops.json");
+    let entry = global_index::find_by_id(&session_id)?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let ops_path = PathBuf::from(&entry.path)
+        .join(".autoresearch/canvases/main/loops")
+        .join(format!("{:03}", loop_index))
+        .join("canvas-ops.json");
 
     if !ops_path.exists() {
         return Ok(serde_json::json!([]));
@@ -157,8 +161,10 @@ pub fn get_loop_ops(session_id: String, loop_index: u32) -> Result<serde_json::V
 /// Load a saved session's canvas state (for viewing, not resuming the loop).
 #[tauri::command]
 pub fn load_session(session_id: String) -> Result<serde_json::Value, String> {
-    let session_dir = session_dir::research_dir().join(&session_id);
-    let state_path = session_dir.join("state.json");
+    let entry = global_index::find_by_id(&session_id)?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let state_path = PathBuf::from(&entry.path)
+        .join(".autoresearch/canvases/main/state.json");
 
     if !state_path.exists() {
         return Err(format!("Session state not found: {}", session_id));
@@ -174,18 +180,13 @@ pub fn load_session(session_id: String) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
-    let research = session_dir::research_dir();
-    if !research.exists() {
-        return Ok(vec![]);
-    }
-
+    let entries = global_index::read_index()?;
     let mut sessions = Vec::new();
-    let entries = std::fs::read_dir(&research)
-        .map_err(|e| format!("Failed to read research directory: {}", e))?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
-        let meta_path = entry.path().join("meta.json");
+        let meta_path = PathBuf::from(&entry.path)
+            .join(".autoresearch")
+            .join("meta.json");
         if meta_path.exists() {
             if let Ok(meta_str) = std::fs::read_to_string(&meta_path) {
                 if let Ok(meta) = serde_json::from_str::<SessionMeta>(&meta_str) {
@@ -206,19 +207,24 @@ pub async fn resume_saved_session(
     api_key: String,
     app: AppHandle,
 ) -> Result<SessionMeta, String> {
-    let sdir = session_dir::research_dir().join(&session_id);
-    if !sdir.exists() {
+    let entry = global_index::find_by_id(&session_id)?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let wd = PathBuf::from(&entry.path);
+    let dot_dir = wd.join(".autoresearch");
+    let canvas_dir = dot_dir.join("canvases").join("main");
+
+    if !dot_dir.exists() {
         return Err(format!("Session not found: {}", session_id));
     }
 
     // Read meta
-    let meta_str = std::fs::read_to_string(sdir.join("meta.json"))
+    let meta_str = std::fs::read_to_string(dot_dir.join("meta.json"))
         .map_err(|e| format!("Failed to read meta.json: {}", e))?;
     let mut meta: session_dir::SessionMeta = serde_json::from_str(&meta_str)
         .map_err(|e| format!("Failed to parse meta.json: {}", e))?;
 
     // Read state
-    let state_path = sdir.join("state.json");
+    let state_path = canvas_dir.join("state.json");
     let (canvas_state, agent_state) = if state_path.exists() {
         let state_str = std::fs::read_to_string(&state_path)
             .map_err(|e| format!("Failed to read state.json: {}", e))?;
@@ -230,7 +236,7 @@ pub async fn resume_saved_session(
     };
 
     // Read template
-    let template_path = sdir.join("template.md");
+    let template_path = dot_dir.join("template.md");
     let template = parser::parse_template_file(&template_path)?;
 
     // Set up LLM client
@@ -256,13 +262,13 @@ pub async fn resume_saved_session(
     // Update meta status
     meta.status = "running".to_string();
     meta.last_modified = chrono::Utc::now().to_rfc3339();
-    let _ = session_dir::update_meta(&sdir, &meta);
+    let _ = session_dir::update_meta(&wd, &meta);
 
     let meta_clone = meta.clone();
     let session_name = meta.name.clone();
     let question = meta.question.clone();
-    let work_dir = meta.working_dir.map(PathBuf::from);
-    let session_dir_clone = sdir.clone();
+    let work_dir = PathBuf::from(&meta.working_dir);
+    let session_dir_clone = canvas_dir.clone();
 
     // Spawn the agent loop
     let app_handle = app.clone();

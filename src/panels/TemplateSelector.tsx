@@ -142,7 +142,7 @@ export function TemplateSelector({ onClose }: Props) {
   };
 
   const handleStart = async () => {
-    if (!selected || !question.trim() || !apiKey.trim()) return;
+    if (!selected || !question.trim() || !apiKey.trim() || !workingDir.trim()) return;
 
     setLoading(true);
     setError(null);
@@ -161,7 +161,7 @@ export function TemplateSelector({ onClose }: Props) {
         question: question,
         apiKey: apiKey,
         model: model,
-        workingDir: workingDir || null,
+        workingDir: workingDir,
       });
 
       setSession(meta.id, meta.name);
@@ -173,7 +173,7 @@ export function TemplateSelector({ onClose }: Props) {
     }
   };
 
-  const canStart = selected && question.trim() && apiKey.trim() && !loading;
+  const canStart = selected && question.trim() && apiKey.trim() && workingDir.trim() && !loading;
 
   return (
     <div style={styles.overlay} onClick={onClose}>
@@ -302,13 +302,13 @@ export function TemplateSelector({ onClose }: Props) {
           <div style={styles.field}>
             <label style={styles.label}>
               Working Directory
-              <span style={{ fontSize: 11, fontWeight: 400, color: '#9ca3af' }}>(optional)</span>
+              <span style={{ fontSize: 11, fontWeight: 400, color: '#9ca3af' }}>(required)</span>
             </label>
             <div style={styles.browseRow}>
               <input
                 style={{ ...styles.input, flex: 1 }}
                 type="text"
-                placeholder="Code runs in session artifacts/ by default"
+                placeholder="Choose a folder for this research session"
                 value={workingDir}
                 onChange={(e) => setWorkingDir(e.target.value)}
               />
