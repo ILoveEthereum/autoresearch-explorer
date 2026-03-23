@@ -7,6 +7,7 @@ use tauri::{AppHandle, Emitter};
 use crate::canvas::state::CanvasState;
 use crate::llm::client::LlmClient;
 use crate::llm::context;
+use crate::memory;
 use crate::storage::{loop_writer, overview_writer, session_dir};
 use crate::storage::state_writer::{self, AgentState, LoopSummary, SessionState};
 use crate::template::types::ParsedTemplate;
@@ -27,6 +28,7 @@ pub enum LoopControl {
 
 /// All the state needed by a running agent session.
 pub struct SessionRunner {
+    pub session_id: String,
     pub session_dir: PathBuf,
     pub session_name: String,
     pub template: ParsedTemplate,
@@ -48,6 +50,8 @@ pub struct SessionRunner {
     pub api_key: String,
     /// Model name for creating sub-agent LLM clients.
     pub model: String,
+    /// Skill doc paths from past sessions to inject as context.
+    pub past_experience: Vec<String>,
 }
 
 impl SessionRunner {
@@ -250,7 +254,60 @@ impl SessionRunner {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
 
+        // Generate skill doc on session end
+        self.generate_and_save_skill_doc().await;
+
         Ok(())
+    }
+
+    /// Generate a skill document and save it to the memory database.
+    async fn generate_and_save_skill_doc(&self) {
+        tracing::info!("Generating skill document for session: {}", self.session_name);
+
+        let skill_result = memory::skill_doc::generate_skill_doc(
+            &self.llm_client,
+            &self.session_name,
+            &self.question,
+            &self.canvas_state,
+        )
+        .await;
+
+        match skill_result {
+            Ok((skill_doc, summary)) => {
+                // Save skill doc to ~/.autoresearch/skills/{slug}.md
+                let home = dirs_next::home_dir().unwrap_or_default();
+                let skills_dir = home.join(".autoresearch").join("skills");
+                let _ = std::fs::create_dir_all(&skills_dir);
+                let slug = self
+                    .session_name
+                    .to_lowercase()
+                    .replace(|c: char| !c.is_alphanumeric(), "-");
+                let skill_path = skills_dir.join(format!("{}.md", slug));
+                let _ = std::fs::write(&skill_path, &skill_doc);
+
+                // Add to memory database
+                if let Ok(db) = memory::database::MemoryDb::open() {
+                    let entry = memory::database::MemoryEntry {
+                        id: self.session_id.clone(),
+                        name: self.session_name.clone(),
+                        question: self.question.clone(),
+                        summary,
+                        skill_doc_path: Some(skill_path.to_string_lossy().to_string()),
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                    };
+                    if let Err(e) = db.add_session(&entry) {
+                        tracing::warn!("Failed to add session to memory DB: {}", e);
+                    } else {
+                        tracing::info!("Skill doc saved and indexed for session: {}", self.session_name);
+                    }
+                } else {
+                    tracing::warn!("Failed to open memory database");
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to generate skill doc: {}", e);
+            }
+        }
     }
 
     /// Build loop snapshots from recent history for the watchdog.
@@ -407,7 +464,11 @@ If no specific tool would help, reply: {{"tool_name": "none", "description": "no
         }));
 
         // Build prompts
-        let system_prompt = context::build_system_prompt(&self.template, Some(self.working_dir.as_path()));
+        let system_prompt = context::build_system_prompt_with_experience(
+            &self.template,
+            Some(self.working_dir.as_path()),
+            &self.past_experience,
+        );
         let user_message = context::build_user_message_with_signals(
             &self.canvas_state,
             &self.agent_state,

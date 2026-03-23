@@ -2,6 +2,7 @@ pub mod agent;
 pub mod canvas;
 pub mod commands;
 pub mod llm;
+pub mod memory;
 pub mod storage;
 pub mod template;
 pub mod tools;
@@ -35,6 +36,8 @@ pub fn run() {
             commands::chat::load_chat,
             commands::export::export_file,
             commands::config::fetch_models,
+            commands::memory::search_memory,
+            commands::memory::list_available_tools,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

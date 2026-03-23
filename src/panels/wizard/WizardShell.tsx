@@ -38,6 +38,8 @@ export function WizardShell({ onClose }: Props) {
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('qwen/qwen-2.5-72b-instruct');
 
+  const [selectedSkillPaths, setSelectedSkillPaths] = useState<string[]>([]);
+
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +119,7 @@ export function WizardShell({ onClose }: Props) {
         workingDir,
         successCriteria,
         maxLoops,
+        pastExperience: selectedSkillPaths.length > 0 ? selectedSkillPaths : null,
       });
 
       setSession(meta.id, meta.name);
@@ -141,7 +144,7 @@ export function WizardShell({ onClose }: Props) {
       case 4:
         return <StepModel apiKey={apiKey} setApiKey={setApiKey} model={model} setModel={setModel} />;
       case 5:
-        return <StepExperience />;
+        return <StepExperience question={question} selectedSkillPaths={selectedSkillPaths} setSelectedSkillPaths={setSelectedSkillPaths} />;
       default:
         return null;
     }

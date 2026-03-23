@@ -4,8 +4,17 @@ use crate::storage::state_writer::AgentState;
 use crate::template::types::ParsedTemplate;
 use std::path::Path;
 
-/// Build the system prompt from the parsed template.
+/// Build the system prompt from the parsed template, optionally including past experience.
 pub fn build_system_prompt(template: &ParsedTemplate, working_dir: Option<&Path>) -> String {
+    build_system_prompt_with_experience(template, working_dir, &[])
+}
+
+/// Build the system prompt with optional past experience from skill docs.
+pub fn build_system_prompt_with_experience(
+    template: &ParsedTemplate,
+    working_dir: Option<&Path>,
+    skill_doc_paths: &[String],
+) -> String {
     let mut prompt = String::new();
 
     prompt.push_str("You are an autonomous research agent. You are executing the research process defined below.\n\n");
@@ -88,6 +97,29 @@ CRITICAL RULES:
     // Agent instructions
     prompt.push_str("\n== AGENT INSTRUCTIONS ==\n");
     prompt.push_str(&template.instructions);
+
+    // Past experience from skill docs
+    if !skill_doc_paths.is_empty() {
+        let mut experience_added = false;
+        for path in skill_doc_paths {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                if !experience_added {
+                    prompt.push_str("\n\n== RELEVANT PAST EXPERIENCE ==\n");
+                    prompt.push_str("The following skill documents are from past research sessions that may be relevant. Use these to avoid repeating mistakes and leverage successful strategies.\n\n");
+                    experience_added = true;
+                }
+                prompt.push_str(&format!("--- Skill Doc: {} ---\n", path));
+                // Truncate very large skill docs
+                if content.len() > 2000 {
+                    prompt.push_str(&content[..2000]);
+                    prompt.push_str("\n[... truncated ...]\n");
+                } else {
+                    prompt.push_str(&content);
+                }
+                prompt.push('\n');
+            }
+        }
+    }
 
     prompt
 }

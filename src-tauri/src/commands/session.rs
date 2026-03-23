@@ -43,6 +43,7 @@ pub async fn create_session(
     working_dir: String,
     success_criteria: Option<String>,
     max_loops: Option<u32>,
+    past_experience: Option<Vec<String>>,
     app: AppHandle,
 ) -> Result<SessionMeta, String> {
     let template_path = PathBuf::from(&template_path);
@@ -78,14 +79,17 @@ pub async fn create_session(
     }
 
     let meta_clone = meta.clone();
+    let session_id_for_runner = meta.id.clone();
     let session_name = name.clone();
     let work_dir = PathBuf::from(&working_dir);
     let sc_owned = sc.to_string();
+    let experience = past_experience.unwrap_or_default();
 
     // Spawn the continuous loop in a background task
     let app_handle = app.clone();
     tokio::spawn(async move {
         let mut runner = SessionRunner {
+            session_id: session_id_for_runner,
             session_dir,
             session_name,
             template,
@@ -101,6 +105,7 @@ pub async fn create_session(
             completion_count: 0,
             api_key: api_key_clone,
             model: model_clone,
+            past_experience: experience,
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
@@ -280,6 +285,7 @@ pub async fn resume_saved_session(
     let _ = session_dir::update_meta(&wd, &meta);
 
     let meta_clone = meta.clone();
+    let session_id_for_runner = meta.id.clone();
     let session_name = meta.name.clone();
     let question = meta.question.clone();
     let work_dir = PathBuf::from(&meta.working_dir);
@@ -292,6 +298,7 @@ pub async fn resume_saved_session(
     let app_handle = app.clone();
     tokio::spawn(async move {
         let mut runner = SessionRunner {
+            session_id: session_id_for_runner,
             session_dir: session_dir_clone,
             session_name,
             template,
@@ -307,6 +314,7 @@ pub async fn resume_saved_session(
             completion_count: 0,
             api_key: api_key_clone,
             model: model_clone,
+            past_experience: vec![],
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
@@ -424,6 +432,7 @@ pub async fn branch_from_checkpoint(
     };
 
     let branch_meta_clone = branch_meta.clone();
+    let branch_session_id = branch_meta.id.clone();
     let session_name = branch_meta.name.clone();
     let question = parent_meta.question;
     let work_dir = PathBuf::from(&parent_meta.working_dir);
@@ -434,6 +443,7 @@ pub async fn branch_from_checkpoint(
     let app_handle = app.clone();
     tokio::spawn(async move {
         let mut runner = SessionRunner {
+            session_id: branch_session_id,
             session_dir: branch_dir,
             session_name,
             template,
@@ -449,6 +459,7 @@ pub async fn branch_from_checkpoint(
             completion_count: 0,
             api_key: api_key_clone,
             model: model_clone,
+            past_experience: vec![],
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
