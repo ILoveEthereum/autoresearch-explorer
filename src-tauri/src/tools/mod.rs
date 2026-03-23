@@ -4,3 +4,8 @@ pub mod web_read;
 pub mod code_executor;
 pub mod docker;
 pub mod file_ops;
+pub mod shell;
+pub mod git;
+pub mod package_manager;
+pub mod arxiv;
+pub mod custom_tool;
