@@ -12,6 +12,7 @@ use crate::llm::client::LlmClient;
 use crate::storage::session_dir::{self, SessionMeta};
 use crate::storage::global_index;
 use crate::storage::state_writer::{self, AgentState};
+use crate::telegram::bot::{self as telegram_bot, TelegramBot};
 use crate::template::parser;
 
 /// Shared state for the active session, managed by Tauri.
@@ -63,6 +64,7 @@ pub async fn create_session(
     }
     let signal_queue = Arc::new(SignalQueue::new());
     let (control_tx, control_rx) = watch::channel(LoopControl::Run);
+    let control_tx_for_telegram = control_tx.clone();
 
     // Stop any existing session first
     {
@@ -77,6 +79,12 @@ pub async fn create_session(
             session_id: meta.id.clone(),
         });
     }
+
+    // Set up Telegram bot if configured
+    let telegram = setup_telegram_bot(
+        signal_queue.clone(),
+        control_tx_for_telegram,
+    );
 
     let meta_clone = meta.clone();
     let session_id_for_runner = meta.id.clone();
@@ -106,6 +114,7 @@ pub async fn create_session(
             api_key: api_key_clone,
             model: model_clone,
             past_experience: experience,
+            telegram,
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
@@ -264,6 +273,7 @@ pub async fn resume_saved_session(
 
     let signal_queue = Arc::new(SignalQueue::new());
     let (control_tx, control_rx) = watch::channel(LoopControl::Run);
+    let control_tx_for_telegram = control_tx.clone();
 
     // Stop any existing session
     {
@@ -278,6 +288,12 @@ pub async fn resume_saved_session(
             session_id: meta.id.clone(),
         });
     }
+
+    // Set up Telegram bot if configured
+    let telegram = setup_telegram_bot(
+        signal_queue.clone(),
+        control_tx_for_telegram,
+    );
 
     // Update meta status
     meta.status = "running".to_string();
@@ -315,6 +331,7 @@ pub async fn resume_saved_session(
             api_key: api_key_clone,
             model: model_clone,
             past_experience: vec![],
+            telegram,
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
@@ -398,6 +415,7 @@ pub async fn branch_from_checkpoint(
 
     let signal_queue = Arc::new(SignalQueue::new());
     let (control_tx, control_rx) = watch::channel(LoopControl::Run);
+    let control_tx_for_telegram = control_tx.clone();
 
     let branch_id = format!("{}-branch-{}", session_id, branch_num);
 
@@ -414,6 +432,12 @@ pub async fn branch_from_checkpoint(
             session_id: branch_id.clone(),
         });
     }
+
+    // Set up Telegram bot if configured
+    let telegram = setup_telegram_bot(
+        signal_queue.clone(),
+        control_tx_for_telegram,
+    );
 
     let branch_meta = SessionMeta {
         id: branch_id,
@@ -460,6 +484,7 @@ pub async fn branch_from_checkpoint(
             api_key: api_key_clone,
             model: model_clone,
             past_experience: vec![],
+            telegram,
         };
 
         if let Err(e) = runner.run_loop(&app_handle).await {
@@ -471,6 +496,31 @@ pub async fn branch_from_checkpoint(
     });
 
     Ok(branch_meta_clone)
+}
+
+/// Get detail for a specific loop iteration (reasoning, tool calls, etc.)
+#[tauri::command]
+pub fn get_loop_detail(session_id: String, loop_index: u32) -> Result<serde_json::Value, String> {
+    let entry = global_index::find_by_id(&session_id)?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let loop_dir = PathBuf::from(&entry.path)
+        .join(".autoresearch/canvases/main/loops")
+        .join(format!("{:03}", loop_index));
+
+    if !loop_dir.exists() {
+        return Err(format!("Loop {} not found", loop_index));
+    }
+
+    let process = std::fs::read_to_string(loop_dir.join("process.md")).unwrap_or_default();
+    let results = std::fs::read_to_string(loop_dir.join("results.md")).unwrap_or_default();
+    let explanation = std::fs::read_to_string(loop_dir.join("explanation.md")).unwrap_or_default();
+
+    Ok(serde_json::json!({
+        "loop_index": loop_index,
+        "process": process,
+        "results": results,
+        "explanation": explanation,
+    }))
 }
 
 /// A canvas entry visible to the frontend.
@@ -556,4 +606,29 @@ pub fn get_canvas_state(session_id: String, canvas_id: String) -> Result<serde_j
         .map_err(|e| format!("Failed to parse state.json: {}", e))?;
 
     Ok(state)
+}
+
+/// Set up the Telegram bot if config exists. Returns an Arc-wrapped bot and
+/// spawns the polling task in the background.
+fn setup_telegram_bot(
+    signal_queue: Arc<SignalQueue>,
+    control_tx: watch::Sender<LoopControl>,
+) -> Option<Arc<TelegramBot>> {
+    let config = telegram_bot::load_config()?;
+    let bot = Arc::new(TelegramBot::new(config));
+
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let polling_bot = bot.clone();
+
+    tokio::spawn(async move {
+        polling_bot
+            .start_polling(signal_queue, control_tx, shutdown_rx)
+            .await;
+    });
+
+    // Leak the sender so the channel stays open. The polling loop will
+    // run until the tokio runtime shuts down or the task is cancelled.
+    std::mem::forget(shutdown_tx);
+
+    Some(bot)
 }

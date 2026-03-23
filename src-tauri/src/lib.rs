@@ -4,6 +4,7 @@ pub mod commands;
 pub mod llm;
 pub mod memory;
 pub mod storage;
+pub mod telegram;
 pub mod template;
 pub mod tools;
 
@@ -24,6 +25,7 @@ pub fn run() {
             commands::session::stop_session,
             commands::session::load_session,
             commands::session::get_loop_ops,
+            commands::session::get_loop_detail,
             commands::session::list_sessions,
             commands::session::resume_saved_session,
             commands::session::list_checkpoints,
@@ -38,6 +40,9 @@ pub fn run() {
             commands::config::fetch_models,
             commands::memory::search_memory,
             commands::memory::list_available_tools,
+            commands::telegram::save_telegram_config,
+            commands::telegram::load_telegram_config,
+            commands::telegram::test_telegram_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
