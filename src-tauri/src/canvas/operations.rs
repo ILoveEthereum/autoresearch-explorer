@@ -9,6 +9,7 @@ pub enum CanvasOp {
         node: NodeData,
     },
     UPDATE_NODE {
+        #[serde(alias = "nodeId")]
         id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         status: Option<String>,
@@ -33,7 +34,7 @@ pub enum CanvasOp {
         children: Vec<String>,
     },
     SET_FOCUS {
-        #[serde(rename = "nodeId")]
+        #[serde(rename = "nodeId", alias = "id")]
         node_id: String,
     },
     SNAPSHOT,

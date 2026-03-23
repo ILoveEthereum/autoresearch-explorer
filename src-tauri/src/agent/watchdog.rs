@@ -129,6 +129,31 @@ fn parse_verdict(text: &str) -> Result<WatchdogVerdict, String> {
         }
     }
 
+    // Fallback: match keywords in freeform text
+    let lower = trimmed.to_lowercase();
+    if lower.contains("phase_complete")
+        || lower.contains("complete")
+        || lower.contains("success criteria met")
+        || lower.contains("research is done")
+    {
+        tracing::info!("Watchdog text fallback matched PhaseComplete from: {}", &trimmed[..trimmed.len().min(200)]);
+        return Ok(WatchdogVerdict::PhaseComplete {
+            reason: "Detected from freeform text".to_string(),
+        });
+    }
+    if lower.contains("stuck") || lower.contains("looping") || lower.contains("repeating") {
+        tracing::info!("Watchdog text fallback matched StuckLooping from: {}", &trimmed[..trimmed.len().min(200)]);
+        return Ok(WatchdogVerdict::StuckLooping {
+            repeated_action: "Detected from freeform text".to_string(),
+        });
+    }
+    if lower.contains("needs_human") || lower.contains("need input") {
+        tracing::info!("Watchdog text fallback matched NeedsHuman from: {}", &trimmed[..trimmed.len().min(200)]);
+        return Ok(WatchdogVerdict::NeedsHuman {
+            question: "Detected from freeform text".to_string(),
+        });
+    }
+
     tracing::warn!(
         "Could not parse watchdog verdict, defaulting to Progressing. Raw: {}",
         &trimmed[..trimmed.len().min(300)]

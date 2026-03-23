@@ -54,6 +54,10 @@ pub struct SessionRunner {
     pub model: String,
     /// Skill doc paths from past sessions to inject as context.
     pub past_experience: Vec<String>,
+    /// Consecutive loops where the agent's reasoning mentions completion.
+    pub completion_mentions: u32,
+    /// Last loop's reasoning text, used for repeated-completion detection.
+    pub last_reasoning: String,
     /// Optional Telegram bot for remote notifications and control.
     pub telegram: Option<Arc<TelegramBot>>,
 }
@@ -113,6 +117,32 @@ impl SessionRunner {
                 }));
                 // Wait a bit before retrying to avoid tight error loops
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            }
+
+            // 2b. Check if agent keeps saying it's done
+            {
+                let reasoning_lower = self.last_reasoning.to_lowercase();
+                if reasoning_lower.contains("completed")
+                    || reasoning_lower.contains("finished")
+                    || reasoning_lower.contains("ready for use")
+                {
+                    self.completion_mentions += 1;
+                } else {
+                    self.completion_mentions = 0;
+                }
+
+                if self.completion_mentions >= 3 {
+                    tracing::info!(
+                        "Agent mentioned completion 3 times in a row — auto-stopping"
+                    );
+                    let _ = app.emit(
+                        "session-completed",
+                        serde_json::json!({
+                            "reason": "Agent repeatedly stated work is complete"
+                        }),
+                    );
+                    break;
+                }
             }
 
             // 3. Watchdog evaluation every 3 loops
@@ -578,6 +608,9 @@ If no specific tool would help, reply: {{"tool_name": "none", "description": "no
                 }
             }
         }
+
+        // Store reasoning for repeated-completion detection
+        self.last_reasoning = response.reasoning.clone();
 
         // Apply canvas operations
         self.canvas_state.apply_ops(&response.canvas_operations, loop_index);
