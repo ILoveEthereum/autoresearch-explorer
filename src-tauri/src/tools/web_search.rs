@@ -1,7 +1,9 @@
 use super::registry::ToolResult;
 
-/// Search the web using Brave Search API (free tier: 2000 queries/month).
-/// Falls back to a simple Google scrape if no API key is configured.
+/// Search priority:
+/// 1. SearXNG (if configured — self-hosted, best quality, no rate limits)
+/// 2. Brave Search API (if API key set — good quality, 2000 free/month)
+/// 3. DuckDuckGo HTML scraping (always available, no key needed)
 pub async fn search(query: &str, max_results: usize) -> ToolResult {
     if query.is_empty() {
         return ToolResult {
@@ -11,7 +13,27 @@ pub async fn search(query: &str, max_results: usize) -> ToolResult {
         };
     }
 
-    // Try Brave Search API first
+    // 1. Try SearXNG first
+    let searxng_url = std::env::var("SEARXNG_URL").ok()
+        .or_else(|| {
+            let config_path = crate::storage::app_data_dir().join("config.json");
+            if let Ok(content) = std::fs::read_to_string(&config_path) {
+                if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
+                    return config["searxng_url"].as_str().map(String::from);
+                }
+            }
+            None
+        });
+
+    if let Some(url) = searxng_url {
+        let result = searxng_search(query, max_results, &url).await;
+        if result.success && !result.output.contains("No results found") {
+            return result;
+        }
+        tracing::warn!("SearXNG returned no results, falling back to next provider");
+    }
+
+    // 2. Try Brave Search API
     let brave_key = std::env::var("BRAVE_SEARCH_API_KEY").ok()
         .or_else(|| {
             let config_path = crate::storage::app_data_dir().join("config.json");
@@ -24,11 +46,105 @@ pub async fn search(query: &str, max_results: usize) -> ToolResult {
         });
 
     if let Some(key) = brave_key {
-        return brave_search(query, max_results, &key).await;
+        let result = brave_search(query, max_results, &key).await;
+        if result.success && !result.output.contains("No results found") {
+            return result;
+        }
+        tracing::warn!("Brave Search returned no results, falling back to DuckDuckGo");
     }
 
-    // Fallback: use DuckDuckGo HTML search (more reliable than Google scraping)
+    // 3. Fallback: DuckDuckGo HTML search
     duckduckgo_search(query, max_results).await
+}
+
+/// SearXNG — self-hosted metasearch engine. Best quality, no rate limits.
+/// Set SEARXNG_URL env var or searxng_url in config.json.
+/// Default port is 8080: http://localhost:8080
+async fn searxng_search(query: &str, max_results: usize, base_url: &str) -> ToolResult {
+    let client = reqwest::Client::builder()
+        .user_agent("Autoresearch/1.0")
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .unwrap();
+
+    let url = format!(
+        "{}/search?q={}&format=json&engines=google,bing,duckduckgo,brave&language=en&safesearch=0&categories=general",
+        base_url.trim_end_matches('/'),
+        urlencoded(query),
+    );
+
+    match client.get(&url).send().await {
+        Ok(response) => {
+            if !response.status().is_success() {
+                return ToolResult {
+                    success: false,
+                    output: String::new(),
+                    error: Some(format!("SearXNG returned status {}", response.status())),
+                };
+            }
+
+            match response.json::<serde_json::Value>().await {
+                Ok(data) => {
+                    let results = data["results"]
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .take(max_results)
+                                .enumerate()
+                                .filter_map(|(i, r)| {
+                                    let title = r["title"].as_str().unwrap_or("").trim();
+                                    let url = r["url"].as_str().unwrap_or("").trim();
+                                    let content = r["content"].as_str().unwrap_or("").trim();
+                                    let engine = r["engine"].as_str().unwrap_or("");
+
+                                    if title.is_empty() || url.is_empty() {
+                                        return None;
+                                    }
+
+                                    if content.is_empty() {
+                                        Some(format!(
+                                            "{}. {} [{}]\n   URL: {}",
+                                            i + 1, title, engine, url
+                                        ))
+                                    } else {
+                                        Some(format!(
+                                            "{}. {} [{}]\n   URL: {}\n   {}",
+                                            i + 1, title, engine, url, content
+                                        ))
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n\n")
+                        })
+                        .unwrap_or_default();
+
+                    if results.is_empty() {
+                        ToolResult {
+                            success: true,
+                            output: "No results found.".to_string(),
+                            error: None,
+                        }
+                    } else {
+                        ToolResult {
+                            success: true,
+                            output: results,
+                            error: None,
+                        }
+                    }
+                }
+                Err(e) => ToolResult {
+                    success: false,
+                    output: String::new(),
+                    error: Some(format!("Failed to parse SearXNG response: {}", e)),
+                },
+            }
+        }
+        Err(e) => ToolResult {
+            success: false,
+            output: String::new(),
+            error: Some(format!("SearXNG request failed: {}. Is SearXNG running at {}?", e, base_url)),
+        },
+    }
 }
 
 async fn brave_search(query: &str, max_results: usize, api_key: &str) -> ToolResult {
