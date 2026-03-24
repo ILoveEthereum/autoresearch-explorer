@@ -34,7 +34,13 @@ const nodeTypes = {
 const KNOWN_TYPES = new Set(Object.keys(nodeTypes));
 
 function getReactFlowType(type: string): string {
-  return KNOWN_TYPES.has(type) ? type : 'default';
+  if (KNOWN_TYPES.has(type)) return type;
+  // Fuzzy match: "Research Question" -> "question", "Source Node" -> "source"
+  const lower = type.toLowerCase().replace(/[^a-z]/g, '');
+  for (const known of KNOWN_TYPES) {
+    if (lower.includes(known)) return known;
+  }
+  return 'default';
 }
 
 function toReactFlowNode(
