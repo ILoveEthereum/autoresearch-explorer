@@ -1,11 +1,20 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
+interface SearxngStatus {
+  docker_installed: boolean;
+  container_running: boolean;
+  url: string | null;
+  message: string;
+}
+
 export function Settings() {
   const [model, setModel] = useState('');
   const [maxLoops, setMaxLoops] = useState(50);
   const [searxngUrl, setSearxngUrl] = useState('');
   const [searchStatus, setSearchStatus] = useState<string | null>(null);
+  const [searxng, setSearxng] = useState<SearxngStatus | null>(null);
+  const [searxngLoading, setSearxngLoading] = useState(false);
 
   useEffect(() => {
     const savedModel = localStorage.getItem('openrouter_model');
@@ -13,10 +22,11 @@ export function Settings() {
     const savedLoops = localStorage.getItem('default_max_loops');
     if (savedLoops) setMaxLoops(parseInt(savedLoops, 10) || 50);
 
-    // Load SearXNG URL from backend config
-    invoke<{ searxng_url?: string }>('load_telegram_config')
-      .then((config: any) => {
-        if (config?.searxng_url) setSearxngUrl(config.searxng_url);
+    // Check SearXNG status
+    invoke<SearxngStatus>('searxng_status')
+      .then((status) => {
+        setSearxng(status);
+        if (status.url) setSearxngUrl(status.url);
       })
       .catch(() => {});
   }, []);
@@ -99,8 +109,68 @@ export function Settings() {
       <div style={styles.section}>
         <div style={styles.sectionTitle}>SearXNG (Search Engine)</div>
         <p style={styles.hint}>
-          Self-hosted metasearch engine. Best search quality, no rate limits.
-          Install via Docker: <code>docker run -p 8080:8080 searxng/searxng</code>
+          One-click search engine powered by Docker. Aggregates Google, Bing, DuckDuckGo, and Brave results. No API keys needed.
+        </p>
+
+        {searxng && !searxng.docker_installed && (
+          <div style={{ ...styles.statusBox, borderColor: '#fbbf24', background: '#fffbeb' }}>
+            <span style={{ fontSize: 12, color: '#92400e' }}>
+              Docker is required. <a href="https://docker.com/products/docker-desktop" target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>Install Docker Desktop</a>
+            </span>
+          </div>
+        )}
+
+        {searxng?.container_running ? (
+          <div style={{ ...styles.statusBox, borderColor: '#22c55e', background: '#f0fdf4' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#166534' }}>SearXNG Running</span>
+            </div>
+            <span style={{ fontSize: 11, color: '#166534' }}>{searxng.url}</span>
+            <button
+              style={{ ...styles.btn, marginTop: 8, color: '#dc2626', borderColor: '#fca5a5' }}
+              disabled={searxngLoading}
+              onClick={async () => {
+                setSearxngLoading(true);
+                try {
+                  const status = await invoke<SearxngStatus>('searxng_stop');
+                  setSearxng(status);
+                  setSearxngUrl('');
+                } catch (e) { setSearchStatus(String(e)); }
+                setSearxngLoading(false);
+              }}
+            >
+              Stop SearXNG
+            </button>
+          </div>
+        ) : (
+          <button
+            style={{ ...styles.startBtn, opacity: searxngLoading || (searxng && !searxng.docker_installed) ? 0.5 : 1 }}
+            disabled={searxngLoading || (searxng !== null && !searxng.docker_installed)}
+            onClick={async () => {
+              setSearxngLoading(true);
+              setSearchStatus('Pulling image and starting container...');
+              try {
+                const status = await invoke<SearxngStatus>('searxng_start');
+                setSearxng(status);
+                if (status.url) setSearxngUrl(status.url);
+                setSearchStatus(null);
+              } catch (e) {
+                setSearchStatus(String(e));
+              }
+              setSearxngLoading(false);
+            }}
+          >
+            {searxngLoading ? 'Starting SearXNG...' : 'Enable SearXNG (one click)'}
+          </button>
+        )}
+
+        {searchStatus && (
+          <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>{searchStatus}</div>
+        )}
+
+        <p style={{ ...styles.hint, marginTop: 10 }}>
+          Or enter a custom SearXNG URL:
         </p>
         <input
           style={styles.input}
@@ -108,23 +178,14 @@ export function Settings() {
           placeholder="http://localhost:8080"
           value={searxngUrl}
           onChange={(e) => setSearxngUrl(e.target.value)}
+          onBlur={handleSaveSearxng}
         />
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button style={styles.btn} onClick={handleSaveSearxng}>Save</button>
-          <button style={styles.btn} onClick={handleTestSearxng}>Test Connection</button>
-          {searchStatus && (
-            <span style={{ fontSize: 11, color: searchStatus.startsWith('Connected') ? '#22c55e' : searchStatus === 'Saved' ? '#3b82f6' : '#ef4444', alignSelf: 'center' }}>
-              {searchStatus}
-            </span>
-          )}
-        </div>
       </div>
 
       <div style={styles.section}>
         <div style={styles.sectionTitle}>Search Priority</div>
         <p style={styles.hint}>
-          Search providers are tried in order: SearXNG → Brave → DuckDuckGo.
-          Configure SearXNG above or set BRAVE_SEARCH_API_KEY for Brave. DuckDuckGo is always available as fallback.
+          1. SearXNG (if enabled) → 2. Brave Search (if API key set) → 3. DuckDuckGo (always available)
         </p>
       </div>
 
@@ -180,6 +241,27 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     color: '#374151',
     fontFamily: 'inherit',
+  },
+  startBtn: {
+    width: '100%',
+    padding: '10px 16px',
+    fontSize: 13,
+    fontWeight: 600,
+    border: 'none',
+    borderRadius: 8,
+    background: '#111827',
+    color: '#fff',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  },
+  statusBox: {
+    padding: '10px 12px',
+    borderRadius: 8,
+    border: '1px solid',
+    marginBottom: 8,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 4,
   },
   placeholder: {
     fontSize: 12,
