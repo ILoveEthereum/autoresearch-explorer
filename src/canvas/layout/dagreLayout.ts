@@ -14,7 +14,7 @@ export function runDagreLayout(
   const g = new dagre.graphlib.Graph();
 
   g.setGraph({
-    rankdir: direction,
+    rankdir: 'TB',
     nodesep: 60,
     ranksep: 100,
     marginx: 50,

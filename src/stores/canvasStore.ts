@@ -158,10 +158,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
               status: (raw.status as CanvasNode['status']) || 'queued',
               fields: (raw.fields as Record<string, unknown>) || {},
               loopIndex: (raw.loop_index as number) ?? (raw.loopIndex as number) ?? undefined,
-              position: {
-                x: 150 + (nodes.length % 4) * 300,
-                y: 150 + Math.floor(nodes.length / 4) * 160,
-              },
+              position: { x: 0, y: 0 },
               pinned: false,
               createdAt: new Date().toISOString(),
             };
@@ -191,9 +188,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
             nodes = nodes.filter((n) => n.id !== op.id);
             edges = edges.filter((e) => e.from !== op.id && e.to !== op.id);
             break;
-          case 'ADD_EDGE':
-            edges = [...edges, op.edge];
+          case 'ADD_EDGE': {
+            const srcExists = nodes.some((n) => n.id === op.edge.from);
+            const tgtExists = nodes.some((n) => n.id === op.edge.to);
+            if (srcExists && tgtExists) {
+              edges = [...edges, op.edge];
+            }
             break;
+          }
           case 'REMOVE_EDGE':
             edges = edges.filter((e) => !(e.from === op.from && e.to === op.to));
             break;

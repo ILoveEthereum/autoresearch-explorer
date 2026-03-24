@@ -27,8 +27,8 @@ pub async fn search(query: &str, max_results: usize) -> ToolResult {
         return brave_search(query, max_results, &key).await;
     }
 
-    // Fallback: use Google search scraping
-    google_scrape_search(query, max_results).await
+    // Fallback: use DuckDuckGo HTML search (more reliable than Google scraping)
+    duckduckgo_search(query, max_results).await
 }
 
 async fn brave_search(query: &str, max_results: usize, api_key: &str) -> ToolResult {
@@ -99,8 +99,8 @@ async fn brave_search(query: &str, max_results: usize, api_key: &str) -> ToolRes
     }
 }
 
-/// Fallback: scrape Google search results
-async fn google_scrape_search(query: &str, max_results: usize) -> ToolResult {
+/// Fallback: scrape DuckDuckGo HTML search results
+async fn duckduckgo_search(query: &str, max_results: usize) -> ToolResult {
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .redirect(reqwest::redirect::Policy::limited(5))
@@ -108,16 +108,15 @@ async fn google_scrape_search(query: &str, max_results: usize) -> ToolResult {
         .unwrap();
 
     let url = format!(
-        "https://www.google.com/search?q={}&num={}",
+        "https://html.duckduckgo.com/html/?q={}",
         urlencoded(query),
-        max_results.min(10)
     );
 
     match client.get(&url).send().await {
         Ok(response) => {
             match response.text().await {
                 Ok(html) => {
-                    let results = parse_google_results(&html, max_results);
+                    let results = parse_duckduckgo_results(&html, max_results);
                     if results.is_empty() {
                         ToolResult {
                             success: true,
@@ -147,62 +146,67 @@ async fn google_scrape_search(query: &str, max_results: usize) -> ToolResult {
     }
 }
 
-fn parse_google_results(html: &str, max_results: usize) -> String {
+fn parse_duckduckgo_results(html: &str, max_results: usize) -> String {
+    use scraper::{Html, Selector};
+
+    let document = Html::parse_document(html);
+    let result_sel = Selector::parse("div.result").unwrap();
+    let title_sel = Selector::parse("a.result__a").unwrap();
+    let snippet_sel = Selector::parse("a.result__snippet").unwrap();
+
     let mut results = Vec::new();
 
-    // Google wraps results in <div class="g"> or similar
-    // Look for <a href="/url?q=..." patterns
-    let mut pos = 0;
-    while results.len() < max_results {
-        // Find links with /url?q= pattern (Google's redirect wrapper)
-        match html[pos..].find("/url?q=") {
-            Some(idx) => {
-                let start = pos + idx + 7; // skip "/url?q="
-                pos = start;
+    for element in document.select(&result_sel) {
+        if results.len() >= max_results {
+            break;
+        }
 
-                // Extract URL (until &)
-                let url_end = html[start..].find('&').unwrap_or(200);
-                let url = percent_decode(&html[start..start + url_end]);
+        let title_el = match element.select(&title_sel).next() {
+            Some(el) => el,
+            None => continue,
+        };
 
-                // Skip google internal URLs
-                if url.contains("google.com") || url.contains("accounts.google") || url.is_empty() {
-                    continue;
-                }
+        let title = title_el.text().collect::<String>().trim().to_string();
+        let raw_href = title_el.value().attr("href").unwrap_or("").to_string();
 
-                // Try to find a nearby title (text in <h3> tag)
-                let title = if let Some(h3_idx) = html[pos..].find("<h3") {
-                    let h3_start = pos + h3_idx;
-                    extract_tag_content(&html[h3_start..], "h3")
-                } else {
-                    None
-                };
+        // DuckDuckGo wraps URLs through a redirect; extract the actual URL
+        let url = if raw_href.contains("uddg=") {
+            raw_href
+                .split("uddg=")
+                .nth(1)
+                .unwrap_or(&raw_href)
+                .split('&')
+                .next()
+                .map(|u| percent_decode(u))
+                .unwrap_or(raw_href.clone())
+        } else {
+            raw_href
+        };
 
-                let title_str = title.as_deref().unwrap_or(&url);
-                let title_clean = strip_html(title_str);
+        if title.is_empty() || url.is_empty() {
+            continue;
+        }
 
-                if !title_clean.is_empty() && !results.iter().any(|r: &String| r.contains(&url)) {
-                    results.push(format!("{}. {}\n   URL: {}", results.len() + 1, title_clean, url));
-                }
-            }
-            None => break,
+        let snippet = element
+            .select(&snippet_sel)
+            .next()
+            .map(|el| el.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+
+        if snippet.is_empty() {
+            results.push(format!("{}. {}\n   URL: {}", results.len() + 1, title, url));
+        } else {
+            results.push(format!(
+                "{}. {}\n   URL: {}\n   {}",
+                results.len() + 1,
+                title,
+                url,
+                snippet
+            ));
         }
     }
 
     results.join("\n\n")
-}
-
-fn extract_tag_content(html: &str, tag: &str) -> Option<String> {
-    let close_tag = format!("</{}>", tag);
-    if let Some(start) = html.find('>') {
-        let text_start = start + 1;
-        if let Some(end) = html[text_start..].find(&close_tag) {
-            let text = strip_html(&html[text_start..text_start + end]).trim().to_string();
-            if !text.is_empty() {
-                return Some(text);
-            }
-        }
-    }
-    None
 }
 
 fn urlencoded(s: &str) -> String {
@@ -213,28 +217,6 @@ fn urlencoded(s: &str) -> String {
             c => format!("%{:02X}", c as u32),
         })
         .collect()
-}
-
-fn strip_html(s: &str) -> String {
-    let mut result = String::new();
-    let mut in_tag = false;
-    for c in s.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => result.push(c),
-            _ => {}
-        }
-    }
-    result
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&nbsp;", " ")
-        .trim()
-        .to_string()
 }
 
 fn percent_decode(s: &str) -> String {

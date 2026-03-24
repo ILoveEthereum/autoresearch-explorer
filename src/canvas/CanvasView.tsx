@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -128,15 +128,31 @@ function CanvasInner() {
     nodeId: string;
   } | null>(null);
 
+  const { fitView } = useReactFlow();
+
   const rfNodes = useMemo(
     () => nodes.map((n) => toReactFlowNode(n, canvasNodeTypes, selectedNodeId)),
     [nodes, canvasNodeTypes, selectedNodeId]
   );
 
-  const rfEdges = useMemo(
-    () => edges.map(toReactFlowEdge),
-    [edges]
-  );
+  const rfEdges = useMemo(() => {
+    const nodeIds = new Set(nodes.map((n) => n.id));
+    return edges
+      .filter((e) => nodeIds.has(e.from) && nodeIds.has(e.to))
+      .map(toReactFlowEdge);
+  }, [edges, nodes]);
+
+  // Fit view whenever nodes or edges change
+  const prevCountRef = useRef(0);
+  useEffect(() => {
+    const count = rfNodes.length + rfEdges.length;
+    if (count !== prevCountRef.current && rfNodes.length > 0) {
+      prevCountRef.current = count;
+      // Delay to let React Flow measure nodes first
+      const timer = setTimeout(() => fitView({ padding: 0.2, maxZoom: 1.5, duration: 300 }), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [rfNodes, rfEdges, fitView]);
 
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
