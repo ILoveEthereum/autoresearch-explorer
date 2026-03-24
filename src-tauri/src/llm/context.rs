@@ -116,6 +116,8 @@ CRITICAL RULES:
 9. Use SET_FOCUS to highlight what you're currently working on.
 10. When building a project, follow this pattern: (a) web_search for implementation details, (b) web_read the best results, (c) file_write to create the code files, (d) code_executor to test them.
 11. ALWAYS use file_write to create files. Do NOT just describe what code should look like — actually write it using the file_write tool.
+12. ALWAYS create ADD_EDGE operations to connect related nodes. Every sub-question should have an edge FROM the sub-question TO the parent question. Every source should have an edge FROM the source TO the question it answers. Every finding should have edges FROM supporting sources TO the finding. A canvas without edges is USELESS. You MUST create edges in EVERY response that adds nodes.
+13. Edge format: {"op": "ADD_EDGE", "edge": {"id": "e-unique", "from": "source-node-id", "to": "target-node-id", "type": "answers|supports|contradicts|informs", "label": "optional description"}}
 "#,
     );
 

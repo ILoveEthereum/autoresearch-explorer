@@ -95,7 +95,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   nodeTypes: [...BUILTIN_NODE_TYPES],
   viewport: { x: 0, y: 0, zoom: 1 },
   focusNodeId: null,
-  layoutMode: 'left_to_right',
+  layoutMode: 'top_to_bottom',
 
   setViewport: (partial) =>
     set((state) => ({ viewport: { ...state.viewport, ...partial } })),
