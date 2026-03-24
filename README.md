@@ -56,7 +56,7 @@ You watch the canvas grow, zoom into any node for details, chat with the agent t
 ### Install and run
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/autoresearch-explorer.git
+git clone https://github.com/ILoveEthereum/autoresearch-explorer.git
 cd autoresearch-explorer
 npm install
 npm run tauri dev
@@ -168,7 +168,7 @@ For code contributions:
 
 ```bash
 # Fork and clone
-git clone https://github.com/YOUR_USERNAME/autoresearch-explorer.git
+git clone https://github.com/ILoveEthereum/autoresearch-explorer.git
 cd autoresearch-explorer
 
 # Install dependencies
