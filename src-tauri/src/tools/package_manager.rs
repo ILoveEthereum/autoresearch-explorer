@@ -1,6 +1,32 @@
 use super::registry::ToolResult;
 use std::path::Path;
 
+/// Validate that a package name is safe (alphanumeric, hyphens, underscores, dots, slashes, @).
+/// Blocks shell metacharacters and injection attempts.
+fn is_valid_package_name(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    // Allow: alphanumeric, hyphen, underscore, dot, slash (for scoped packages), @
+    // This covers npm scoped packages like @scope/package, pip packages, and cargo crates
+    name.chars().all(|c| {
+        c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '/' || c == '@'
+    })
+}
+
+/// Validate all package names in a list, returning an error message if any are invalid.
+fn validate_packages(packages: &[String]) -> Result<(), String> {
+    for pkg in packages {
+        if !is_valid_package_name(pkg) {
+            return Err(format!(
+                "Invalid package name '{}'. Only alphanumeric characters, hyphens, underscores, dots, slashes, and @ are allowed.",
+                pkg
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Detect the package manager from the working directory and run an operation.
 /// Supported: pip (requirements.txt), npm (package.json), cargo (Cargo.toml).
 pub async fn package_op(action: &str, packages: &[String], working_dir: &Path) -> ToolResult {
@@ -12,12 +38,22 @@ pub async fn package_op(action: &str, packages: &[String], working_dir: &Path) -
         };
     }
 
+    // Validate all package names before proceeding
+    if let Err(e) = validate_packages(packages) {
+        tracing::warn!("Blocked package operation with invalid package name: {}", e);
+        return ToolResult {
+            success: false,
+            output: String::new(),
+            error: Some(e),
+        };
+    }
+
     let pm = detect_package_manager(working_dir);
 
-    let command = match pm.as_deref() {
-        Some("pip") => build_pip_command(action, packages),
-        Some("npm") => build_npm_command(action, packages),
-        Some("cargo") => build_cargo_command(action, packages),
+    let (program, args) = match pm.as_deref() {
+        Some("pip") => build_pip_args(action, packages),
+        Some("npm") => build_npm_args(action, packages),
+        Some("cargo") => build_cargo_args(action, packages),
         _ => {
             return ToolResult {
                 success: false,
@@ -29,9 +65,9 @@ pub async fn package_op(action: &str, packages: &[String], working_dir: &Path) -
         }
     };
 
-    let command = match command {
-        Ok(cmd) => cmd,
-        Err(e) => {
+    let (program, args) = match (program, args) {
+        (Ok(p), Ok(a)) => (p, a),
+        (Err(e), _) | (_, Err(e)) => {
             return ToolResult {
                 success: false,
                 output: String::new(),
@@ -42,8 +78,8 @@ pub async fn package_op(action: &str, packages: &[String], working_dir: &Path) -
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(300),
-        tokio::process::Command::new("sh")
-            .args(["-c", &command])
+        tokio::process::Command::new(&program)
+            .args(&args)
             .current_dir(working_dir)
             .output(),
     )
@@ -104,65 +140,80 @@ fn detect_package_manager(working_dir: &Path) -> Option<String> {
     }
 }
 
-fn build_pip_command(action: &str, packages: &[String]) -> Result<String, String> {
+/// Return (program, args) for pip commands using structured arguments.
+fn build_pip_args(action: &str, packages: &[String]) -> (Result<String, String>, Result<Vec<String>, String>) {
     match action {
         "install" => {
             if packages.is_empty() {
-                Ok("pip install -r requirements.txt".to_string())
+                (Ok("pip".to_string()), Ok(vec!["install".to_string(), "-r".to_string(), "requirements.txt".to_string()]))
             } else {
-                Ok(format!("pip install {}", packages.join(" ")))
+                let mut args = vec!["install".to_string()];
+                args.extend(packages.iter().cloned());
+                (Ok("pip".to_string()), Ok(args))
             }
         }
         "uninstall" => {
             if packages.is_empty() {
-                Err("No packages specified for uninstall".to_string())
+                (Err("No packages specified for uninstall".to_string()), Ok(vec![]))
             } else {
-                Ok(format!("pip uninstall -y {}", packages.join(" ")))
+                let mut args = vec!["uninstall".to_string(), "-y".to_string()];
+                args.extend(packages.iter().cloned());
+                (Ok("pip".to_string()), Ok(args))
             }
         }
-        "list" => Ok("pip list".to_string()),
-        _ => Err(format!("Unknown action '{}'. Use: install, uninstall, list", action)),
+        "list" => (Ok("pip".to_string()), Ok(vec!["list".to_string()])),
+        _ => (Err(format!("Unknown action '{}'. Use: install, uninstall, list", action)), Ok(vec![])),
     }
 }
 
-fn build_npm_command(action: &str, packages: &[String]) -> Result<String, String> {
+/// Return (program, args) for npm commands using structured arguments.
+fn build_npm_args(action: &str, packages: &[String]) -> (Result<String, String>, Result<Vec<String>, String>) {
     match action {
         "install" => {
             if packages.is_empty() {
-                Ok("npm install".to_string())
+                (Ok("npm".to_string()), Ok(vec!["install".to_string()]))
             } else {
-                Ok(format!("npm install {}", packages.join(" ")))
+                let mut args = vec!["install".to_string()];
+                args.extend(packages.iter().cloned());
+                (Ok("npm".to_string()), Ok(args))
             }
         }
         "uninstall" => {
             if packages.is_empty() {
-                Err("No packages specified for uninstall".to_string())
+                (Err("No packages specified for uninstall".to_string()), Ok(vec![]))
             } else {
-                Ok(format!("npm uninstall {}", packages.join(" ")))
+                let mut args = vec!["uninstall".to_string()];
+                args.extend(packages.iter().cloned());
+                (Ok("npm".to_string()), Ok(args))
             }
         }
-        "list" => Ok("npm list --depth=0".to_string()),
-        _ => Err(format!("Unknown action '{}'. Use: install, uninstall, list", action)),
+        "list" => (Ok("npm".to_string()), Ok(vec!["list".to_string(), "--depth=0".to_string()])),
+        _ => (Err(format!("Unknown action '{}'. Use: install, uninstall, list", action)), Ok(vec![])),
     }
 }
 
-fn build_cargo_command(action: &str, packages: &[String]) -> Result<String, String> {
+/// Return (program, args) for cargo commands using structured arguments.
+fn build_cargo_args(action: &str, packages: &[String]) -> (Result<String, String>, Result<Vec<String>, String>) {
     match action {
         "install" => {
             if packages.is_empty() {
-                Ok("cargo build".to_string())
+                (Ok("cargo".to_string()), Ok(vec!["build".to_string()]))
             } else {
-                Ok(format!("cargo add {}", packages.join(" ")))
+                let mut args = vec!["add".to_string()];
+                args.extend(packages.iter().cloned());
+                (Ok("cargo".to_string()), Ok(args))
             }
         }
         "uninstall" => {
             if packages.is_empty() {
-                Err("No packages specified for uninstall".to_string())
+                (Err("No packages specified for uninstall".to_string()), Ok(vec![]))
             } else {
-                Ok(format!("cargo remove {}", packages.join(" ")))
+                let mut args = vec!["remove".to_string()];
+                args.extend(packages.iter().cloned());
+                (Ok("cargo".to_string()), Ok(args))
             }
         }
-        "list" => Ok("cargo metadata --no-deps --format-version 1 | grep -o '\"name\":\"[^\"]*\"'".to_string()),
-        _ => Err(format!("Unknown action '{}'. Use: install, uninstall, list", action)),
+        "list" => (Ok("cargo".to_string()), Ok(vec!["metadata".to_string(), "--no-deps".to_string(), "--format-version".to_string(), "1".to_string()])),
+        _ => (Err(format!("Unknown action '{}'. Use: install, uninstall, list", action)), Ok(vec![])),
     }
 }

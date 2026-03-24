@@ -2,11 +2,12 @@ use super::registry::ToolResult;
 use std::path::Path;
 
 const ALLOWED_ACTIONS: &[&str] = &[
-    "clone", "status", "diff", "log", "commit", "branch", "add", "checkout",
+    "clone", "status", "diff", "log", "commit", "branch", "add", "checkout", "push", "pull",
 ];
 
 /// Execute a git operation in the given working directory.
 /// Only a safe subset of git commands is allowed.
+/// Uses structured arguments instead of shell interpolation.
 pub async fn git_op(action: &str, args: &str, working_dir: &Path) -> ToolResult {
     if action.is_empty() {
         return ToolResult {
@@ -30,17 +31,19 @@ pub async fn git_op(action: &str, args: &str, working_dir: &Path) -> ToolResult 
 
     let _ = std::fs::create_dir_all(working_dir);
 
-    // Build the command: git {action} {args}
-    let full_command = if args.is_empty() {
-        format!("git {}", action)
+    // Build structured argument list instead of using sh -c
+    let mut cmd_args: Vec<&str> = vec![action];
+    let parsed_args: Vec<&str> = if args.is_empty() {
+        vec![]
     } else {
-        format!("git {} {}", action, args)
+        args.split_whitespace().collect()
     };
+    cmd_args.extend(&parsed_args);
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(120),
-        tokio::process::Command::new("sh")
-            .args(["-c", &full_command])
+        tokio::process::Command::new("git")
+            .args(&cmd_args)
             .current_dir(working_dir)
             .output(),
     )

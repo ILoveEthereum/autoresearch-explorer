@@ -1,7 +1,7 @@
 use super::registry::ToolResult;
 
-/// Search the web using DuckDuckGo's HTML page (no API key needed).
-/// Falls back to a simple scrape of DuckDuckGo search results.
+/// Search the web using Brave Search API (free tier: 2000 queries/month).
+/// Falls back to a simple Google scrape if no API key is configured.
 pub async fn search(query: &str, max_results: usize) -> ToolResult {
     if query.is_empty() {
         return ToolResult {
@@ -11,26 +11,117 @@ pub async fn search(query: &str, max_results: usize) -> ToolResult {
         };
     }
 
+    // Try Brave Search API first
+    let brave_key = std::env::var("BRAVE_SEARCH_API_KEY").ok()
+        .or_else(|| {
+            let config_path = crate::storage::app_data_dir().join("config.json");
+            if let Ok(content) = std::fs::read_to_string(&config_path) {
+                if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
+                    return config["brave_search_api_key"].as_str().map(String::from);
+                }
+            }
+            None
+        });
+
+    if let Some(key) = brave_key {
+        return brave_search(query, max_results, &key).await;
+    }
+
+    // Fallback: use Google search scraping
+    google_scrape_search(query, max_results).await
+}
+
+async fn brave_search(query: &str, max_results: usize, api_key: &str) -> ToolResult {
     let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+        .user_agent("Autoresearch/1.0")
         .build()
         .unwrap();
 
-    // Use DuckDuckGo HTML search (no API key required)
     let url = format!(
-        "https://html.duckduckgo.com/html/?q={}",
-        urlencoded(query)
+        "https://api.search.brave.com/res/v1/web/search?q={}&count={}",
+        urlencoded(query),
+        max_results.min(20)
+    );
+
+    match client.get(&url)
+        .header("Accept", "application/json")
+        .header("Accept-Encoding", "gzip")
+        .header("X-Subscription-Token", api_key)
+        .send()
+        .await
+    {
+        Ok(response) => {
+            match response.json::<serde_json::Value>().await {
+                Ok(data) => {
+                    let results = data["web"]["results"]
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .take(max_results)
+                                .enumerate()
+                                .map(|(i, r)| {
+                                    let title = r["title"].as_str().unwrap_or("");
+                                    let url = r["url"].as_str().unwrap_or("");
+                                    let desc = r["description"].as_str().unwrap_or("");
+                                    format!("{}. {}\n   URL: {}\n   {}", i + 1, title, url, desc)
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n\n")
+                        })
+                        .unwrap_or_default();
+
+                    if results.is_empty() {
+                        ToolResult {
+                            success: true,
+                            output: "No results found.".to_string(),
+                            error: None,
+                        }
+                    } else {
+                        ToolResult {
+                            success: true,
+                            output: results,
+                            error: None,
+                        }
+                    }
+                }
+                Err(e) => ToolResult {
+                    success: false,
+                    output: String::new(),
+                    error: Some(format!("Failed to parse Brave search response: {}", e)),
+                },
+            }
+        }
+        Err(e) => ToolResult {
+            success: false,
+            output: String::new(),
+            error: Some(format!("Brave search request failed: {}", e)),
+        },
+    }
+}
+
+/// Fallback: scrape Google search results
+async fn google_scrape_search(query: &str, max_results: usize) -> ToolResult {
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .unwrap();
+
+    let url = format!(
+        "https://www.google.com/search?q={}&num={}",
+        urlencoded(query),
+        max_results.min(10)
     );
 
     match client.get(&url).send().await {
         Ok(response) => {
             match response.text().await {
                 Ok(html) => {
-                    let results = parse_ddg_results(&html, max_results);
+                    let results = parse_google_results(&html, max_results);
                     if results.is_empty() {
                         ToolResult {
                             success: true,
-                            output: "No results found.".to_string(),
+                            output: "No results found. Try a different search query.".to_string(),
                             error: None,
                         }
                     } else {
@@ -56,62 +147,41 @@ pub async fn search(query: &str, max_results: usize) -> ToolResult {
     }
 }
 
-/// Simple URL encoding
-fn urlencoded(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            ' ' => '+'.to_string(),
-            c if c.is_alphanumeric() || "-_.~".contains(c) => c.to_string(),
-            c => format!("%{:02X}", c as u32),
-        })
-        .collect()
-}
-
-/// Parse DuckDuckGo HTML results into a readable format.
-fn parse_ddg_results(html: &str, max_results: usize) -> String {
+fn parse_google_results(html: &str, max_results: usize) -> String {
     let mut results = Vec::new();
+
+    // Google wraps results in <div class="g"> or similar
+    // Look for <a href="/url?q=..." patterns
     let mut pos = 0;
-
     while results.len() < max_results {
-        // Find result links: <a rel="nofollow" class="result__a" href="...">
-        let marker = "class=\"result__a\"";
-        match html[pos..].find(marker) {
+        // Find links with /url?q= pattern (Google's redirect wrapper)
+        match html[pos..].find("/url?q=") {
             Some(idx) => {
-                let start = pos + idx;
-                pos = start + marker.len();
+                let start = pos + idx + 7; // skip "/url?q="
+                pos = start;
 
-                // Extract href
-                let href = extract_attr(&html[start - 100..start + 200], "href");
+                // Extract URL (until &)
+                let url_end = html[start..].find('&').unwrap_or(200);
+                let url = percent_decode(&html[start..start + url_end]);
 
-                // Extract title (text inside the <a> tag)
-                let title = extract_tag_text(&html[start..], "a");
+                // Skip google internal URLs
+                if url.contains("google.com") || url.contains("accounts.google") || url.is_empty() {
+                    continue;
+                }
 
-                // Find snippet: class="result__snippet"
-                let snippet = if let Some(snip_idx) = html[pos..].find("class=\"result__snippet\"") {
-                    let snip_start = pos + snip_idx;
-                    extract_tag_text(&html[snip_start..], "a")
-                        .or_else(|| extract_tag_text(&html[snip_start..], "span"))
+                // Try to find a nearby title (text in <h3> tag)
+                let title = if let Some(h3_idx) = html[pos..].find("<h3") {
+                    let h3_start = pos + h3_idx;
+                    extract_tag_content(&html[h3_start..], "h3")
                 } else {
                     None
                 };
 
-                if let Some(title) = title {
-                    let title_clean = strip_html(&title);
-                    if !title_clean.is_empty() {
-                        let mut entry = format!("{}. {}", results.len() + 1, title_clean);
-                        if let Some(ref href) = href {
-                            // DuckDuckGo wraps URLs in redirect, try to extract the actual URL
-                            let clean_url = extract_ddg_url(href);
-                            entry.push_str(&format!("\n   URL: {}", clean_url));
-                        }
-                        if let Some(ref snippet) = snippet {
-                            let snippet_clean = strip_html(snippet);
-                            if !snippet_clean.is_empty() {
-                                entry.push_str(&format!("\n   {}", snippet_clean));
-                            }
-                        }
-                        results.push(entry);
-                    }
+                let title_str = title.as_deref().unwrap_or(&url);
+                let title_clean = strip_html(title_str);
+
+                if !title_clean.is_empty() && !results.iter().any(|r: &String| r.contains(&url)) {
+                    results.push(format!("{}. {}\n   URL: {}", results.len() + 1, title_clean, url));
                 }
             }
             None => break,
@@ -121,29 +191,28 @@ fn parse_ddg_results(html: &str, max_results: usize) -> String {
     results.join("\n\n")
 }
 
-fn extract_attr(html: &str, attr: &str) -> Option<String> {
-    let pattern = format!("{}=\"", attr);
-    if let Some(start) = html.find(&pattern) {
-        let val_start = start + pattern.len();
-        if let Some(end) = html[val_start..].find('"') {
-            return Some(html[val_start..val_start + end].to_string());
-        }
-    }
-    None
-}
-
-fn extract_tag_text(html: &str, _tag: &str) -> Option<String> {
-    // Find first > then collect text until next <
+fn extract_tag_content(html: &str, tag: &str) -> Option<String> {
+    let close_tag = format!("</{}>", tag);
     if let Some(start) = html.find('>') {
         let text_start = start + 1;
-        if let Some(end) = html[text_start..].find('<') {
-            let text = html[text_start..text_start + end].trim().to_string();
+        if let Some(end) = html[text_start..].find(&close_tag) {
+            let text = strip_html(&html[text_start..text_start + end]).trim().to_string();
             if !text.is_empty() {
                 return Some(text);
             }
         }
     }
     None
+}
+
+fn urlencoded(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            ' ' => '+'.to_string(),
+            c if c.is_alphanumeric() || "-_.~".contains(c) => c.to_string(),
+            c => format!("%{:02X}", c as u32),
+        })
+        .collect()
 }
 
 fn strip_html(s: &str) -> String {
@@ -157,7 +226,6 @@ fn strip_html(s: &str) -> String {
             _ => {}
         }
     }
-    // Decode common HTML entities
     result
         .replace("&amp;", "&")
         .replace("&lt;", "<")
@@ -167,21 +235,6 @@ fn strip_html(s: &str) -> String {
         .replace("&nbsp;", " ")
         .trim()
         .to_string()
-}
-
-fn extract_ddg_url(href: &str) -> String {
-    // DuckDuckGo URLs look like: //duckduckgo.com/l/?uddg=https%3A%2F%2F...&rut=...
-    if let Some(start) = href.find("uddg=") {
-        let url_start = start + 5;
-        let url_end = href[url_start..]
-            .find('&')
-            .map(|i| url_start + i)
-            .unwrap_or(href.len());
-        let encoded = &href[url_start..url_end];
-        // Simple percent-decode
-        return percent_decode(encoded);
-    }
-    href.to_string()
 }
 
 fn percent_decode(s: &str) -> String {

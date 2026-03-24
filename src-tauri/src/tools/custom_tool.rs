@@ -81,7 +81,7 @@ pub async fn execute_custom_tool(
         }
     };
 
-    let command = match manifest.get("command").and_then(|v| v.as_str()) {
+    let command_str = match manifest.get("command").and_then(|v| v.as_str()) {
         Some(cmd) => cmd,
         None => {
             return ToolResult {
@@ -92,23 +92,45 @@ pub async fn execute_custom_tool(
         }
     };
 
-    // Serialize input to JSON string for passing to the tool
+    // Parse the command string into program and arguments
+    let command_parts: Vec<&str> = command_str.split_whitespace().collect();
+    if command_parts.is_empty() {
+        return ToolResult {
+            success: false,
+            output: String::new(),
+            error: Some("Manifest 'command' field is empty".to_string()),
+        };
+    }
+
+    let program = command_parts[0];
+    let mut cmd_args: Vec<&str> = command_parts[1..].to_vec();
+    cmd_args.push("--input");
+    cmd_args.push("-"); // Convention: read from stdin when "-" is passed
+
+    // Serialize input to JSON string for passing via stdin
     let input_json = serde_json::to_string(input).unwrap_or_else(|_| "{}".to_string());
 
-    // Run: sh -c "cd {tool_dir} && {command} --input '{input_json}'"
-    let full_command = format!(
-        "cd {} && {} --input '{}'",
-        tool_dir.display(),
-        command,
-        input_json.replace('\'', "'\\''") // Escape single quotes
-    );
-
+    // Use structured Command::args() instead of sh -c, pass input via stdin
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(120),
-        tokio::process::Command::new("sh")
-            .args(["-c", &full_command])
-            .current_dir(&tool_dir)
-            .output(),
+        async {
+            let mut child = tokio::process::Command::new(program)
+                .args(&cmd_args)
+                .current_dir(&tool_dir)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()?;
+
+            // Write input JSON to stdin
+            if let Some(mut stdin) = child.stdin.take() {
+                use tokio::io::AsyncWriteExt;
+                let _ = stdin.write_all(input_json.as_bytes()).await;
+                // stdin is dropped here, closing the pipe
+            }
+
+            child.wait_with_output().await
+        },
     )
     .await;
 

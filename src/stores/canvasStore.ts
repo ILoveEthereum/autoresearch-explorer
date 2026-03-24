@@ -116,7 +116,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         viewport: {
           x: (minX + maxX) / 2,
           y: (minY + maxY) / 2,
-          zoom: Math.min(1, 800 / Math.max(maxX - minX + 200, maxY - minY + 200, 1)),
+          zoom: Math.max(0.4, Math.min(1, 800 / Math.max(maxX - minX + 200, maxY - minY + 200, 1))),
         },
       };
     }),
@@ -157,11 +157,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
               summary: String(raw.summary || raw.description || ''),
               status: (raw.status as CanvasNode['status']) || 'queued',
               fields: (raw.fields as Record<string, unknown>) || {},
-              position: { x: 100 + nodes.length * 280, y: 200 },
+              loopIndex: (raw.loop_index as number) ?? (raw.loopIndex as number) ?? undefined,
+              position: {
+                x: 150 + (nodes.length % 4) * 300,
+                y: 150 + Math.floor(nodes.length / 4) * 160,
+              },
               pinned: false,
               createdAt: new Date().toISOString(),
             };
-            nodes = [...nodes, newNode];
+            // Deduplicate — if node with same ID exists, update it instead
+            const existingIdx = nodes.findIndex((n) => n.id === newNode.id);
+            if (existingIdx >= 0) {
+              nodes = nodes.map((n, i) => i === existingIdx ? { ...n, ...newNode, position: n.position } : n);
+            } else {
+              nodes = [...nodes, newNode];
+            }
             break;
           }
           case 'UPDATE_NODE': {

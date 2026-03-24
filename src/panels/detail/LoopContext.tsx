@@ -21,11 +21,10 @@ export function LoopContext({ node }: Props) {
   const [loading, setLoading] = useState(false);
   const sessionId = useSessionStore((s) => s.sessionId);
 
-  const loopIndex = node.loopIndex ?? (node.fields.loop_index as number | undefined);
-  if (loopIndex == null) return null;
+  const loopIndex = node.loopIndex ?? (node.fields?.loop_index as number | undefined);
 
   useEffect(() => {
-    if (!expanded || !sessionId || data) return;
+    if (!expanded || !sessionId || !loopIndex || data) return;
     setLoading(true);
     invoke<LoopData>('get_loop_detail', { sessionId, loopIndex })
       .then(setData)
@@ -33,106 +32,102 @@ export function LoopContext({ node }: Props) {
       .finally(() => setLoading(false));
   }, [expanded, sessionId, loopIndex, data]);
 
-  // Extract reasoning from process markdown (between "## Reasoning" and end)
-  const reasoning = data?.process
-    ? extractSection(data.process, '## Reasoning')
-    : null;
-
-  // Extract tool calls from results markdown
-  const toolCalls = data?.results
-    ? extractToolCalls(data.results)
-    : [];
-
   return (
     <div style={ds.section}>
-      <div
-        style={accordionStyles.header}
-        onClick={() => setExpanded(!expanded)}
-      >
-        <span
-          style={{
-            ...accordionStyles.chevron,
-            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-          }}
-        >
-          &#9654;
-        </span>
-        <h4 style={{ ...ds.sectionTitle, margin: 0 }}>Loop {loopIndex}</h4>
-      </div>
+      {/* Summary — always show if available */}
+      {node.summary && node.summary !== node.title && (
+        <div style={{ marginBottom: 10 }}>
+          <span style={{ ...ds.label, fontSize: 10 }}>Summary</span>
+          <p style={{ ...ds.text, fontSize: 12, lineHeight: 1.5 }}>{node.summary}</p>
+        </div>
+      )}
 
-      {expanded && (
-        <div style={accordionStyles.body}>
-          {loading && (
-            <span style={{ fontSize: 11, color: '#9ca3af' }}>Loading...</span>
-          )}
+      {/* Fields — always show if any exist */}
+      {node.fields && Object.keys(node.fields).length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <span style={{ ...ds.label, fontSize: 10 }}>Details</span>
+          {Object.entries(node.fields).map(([key, value]) => {
+            if (key === 'loop_index') return null;
+            const strVal = typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value ?? '');
+            if (!strVal) return null;
+            return (
+              <div key={key} style={{ marginBottom: 6 }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' as const }}>
+                  {key.replace(/_/g, ' ')}
+                </span>
+                {strVal.length > 80 || strVal.includes('\n') ? (
+                  <pre style={{ ...ds.codeBlock, fontSize: 11, margin: '2px 0', whiteSpace: 'pre-wrap' as const }}>
+                    {strVal}
+                  </pre>
+                ) : (
+                  <p style={{ ...ds.text, fontSize: 12, margin: '2px 0' }}>{strVal}</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-          {reasoning && (
-            <div style={{ marginBottom: 10 }}>
-              <span style={{ ...ds.label, fontSize: 10 }}>Reasoning</span>
-              <p style={{ ...ds.text, fontSize: 12 }}>
-                {reasoning.slice(0, 500)}
-                {reasoning.length > 500 ? '...' : ''}
-              </p>
-            </div>
-          )}
+      {/* Loop context — expandable if loop index is known */}
+      {loopIndex != null && (
+        <div>
+          <div
+            style={accordionStyles.header}
+            onClick={() => setExpanded(!expanded)}
+          >
+            <span
+              style={{
+                ...accordionStyles.chevron,
+                transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              }}
+            >
+              &#9654;
+            </span>
+            <h4 style={{ ...ds.sectionTitle, margin: 0 }}>Agent Reasoning (Loop {loopIndex})</h4>
+          </div>
 
-          {toolCalls.length > 0 && (
-            <div>
-              <span style={{ ...ds.label, fontSize: 10 }}>Tool Calls</span>
-              {toolCalls.map((tc, i) => (
-                <div key={i} style={accordionStyles.toolCall}>
-                  <span style={{ fontWeight: 600, fontSize: 11, color: '#111827' }}>
-                    {tc.name}
-                  </span>
-                  {tc.output && (
-                    <pre style={{ ...ds.codeBlock, fontSize: 10, maxHeight: 100, margin: '4px 0' }}>
-                      {tc.output.slice(0, 300)}
-                      {tc.output.length > 300 ? '...' : ''}
-                    </pre>
-                  )}
+          {expanded && (
+            <div style={accordionStyles.body}>
+              {loading && (
+                <span style={{ fontSize: 11, color: '#9ca3af' }}>Loading...</span>
+              )}
+
+              {data?.process && (
+                <div style={{ marginBottom: 10 }}>
+                  <span style={{ ...ds.label, fontSize: 10 }}>Process</span>
+                  <pre style={{ ...ds.codeBlock, fontSize: 11, whiteSpace: 'pre-wrap' as const, maxHeight: 200, overflow: 'auto' }}>
+                    {data.process}
+                  </pre>
                 </div>
-              ))}
-            </div>
-          )}
+              )}
 
-          {!loading && !reasoning && toolCalls.length === 0 && data && (
-            <span style={{ fontSize: 11, color: '#9ca3af' }}>No details available</span>
+              {data?.results && (
+                <div style={{ marginBottom: 10 }}>
+                  <span style={{ ...ds.label, fontSize: 10 }}>Tool Results</span>
+                  <pre style={{ ...ds.codeBlock, fontSize: 11, whiteSpace: 'pre-wrap' as const, maxHeight: 200, overflow: 'auto' }}>
+                    {data.results}
+                  </pre>
+                </div>
+              )}
+
+              {data?.explanation && (
+                <div style={{ marginBottom: 10 }}>
+                  <span style={{ ...ds.label, fontSize: 10 }}>Explanation</span>
+                  <pre style={{ ...ds.codeBlock, fontSize: 11, whiteSpace: 'pre-wrap' as const, maxHeight: 200, overflow: 'auto' }}>
+                    {data.explanation}
+                  </pre>
+                </div>
+              )}
+
+              {!loading && !data?.process && !data?.results && (
+                <span style={{ fontSize: 11, color: '#9ca3af' }}>No loop details available</span>
+              )}
+            </div>
           )}
         </div>
       )}
     </div>
   );
-}
-
-function extractSection(md: string, heading: string): string | null {
-  const idx = md.indexOf(heading);
-  if (idx === -1) return null;
-  const start = idx + heading.length;
-  const nextHeading = md.indexOf('\n#', start);
-  const text = nextHeading === -1 ? md.slice(start) : md.slice(start, nextHeading);
-  return text.trim() || null;
-}
-
-interface ToolCallInfo {
-  name: string;
-  output: string | null;
-}
-
-function extractToolCalls(md: string): ToolCallInfo[] {
-  const calls: ToolCallInfo[] = [];
-  const regex = /### (.+)\n/g;
-  let match;
-  while ((match = regex.exec(md)) !== null) {
-    const name = match[1].trim();
-    // Try to grab output section
-    const afterMatch = md.slice(match.index + match[0].length);
-    const outputMatch = afterMatch.match(/\*\*Output:\*\*\n```\n([\s\S]*?)```/);
-    calls.push({
-      name,
-      output: outputMatch ? outputMatch[1].trim() : null,
-    });
-  }
-  return calls;
 }
 
 const accordionStyles: Record<string, React.CSSProperties> = {
@@ -142,6 +137,7 @@ const accordionStyles: Record<string, React.CSSProperties> = {
     gap: 6,
     cursor: 'pointer',
     userSelect: 'none',
+    marginTop: 8,
   },
   chevron: {
     fontSize: 8,
@@ -152,9 +148,5 @@ const accordionStyles: Record<string, React.CSSProperties> = {
   body: {
     marginTop: 8,
     paddingLeft: 14,
-  },
-  toolCall: {
-    padding: '4px 0',
-    borderBottom: '1px solid #f9fafb',
   },
 };

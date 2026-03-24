@@ -1,3 +1,4 @@
+import React from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { CanvasView } from './canvas/CanvasView';
 import { SessionControls } from './panels/SessionControls';
@@ -10,6 +11,99 @@ import { useUiStore } from './stores/uiStore';
 import { useSessionStore } from './stores/sessionStore';
 import { useTauriEvents } from './hooks/useTauriEvents';
 import { useKeyboard } from './hooks/useKeyboard';
+
+// --- Error Boundary ---
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  ErrorBoundaryState
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('Uncaught error in React tree:', error, info.componentStack);
+  }
+
+  handleReload = () => {
+    window.location.reload();
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={errorStyles.container}>
+          <div style={errorStyles.card}>
+            <h2 style={errorStyles.title}>Something went wrong</h2>
+            <p style={errorStyles.message}>
+              {this.state.error?.message || 'An unexpected error occurred.'}
+            </p>
+            <button style={errorStyles.button} onClick={this.handleReload}>
+              Reload
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const errorStyles: Record<string, React.CSSProperties> = {
+  container: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100vh',
+    backgroundColor: '#111',
+    color: '#e5e5e5',
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+  },
+  card: {
+    maxWidth: 480,
+    padding: '40px 32px',
+    borderRadius: 12,
+    backgroundColor: '#1a1a1a',
+    border: '1px solid #333',
+    textAlign: 'center' as const,
+  },
+  title: {
+    margin: '0 0 12px 0',
+    fontSize: 20,
+    fontWeight: 600,
+    color: '#f87171',
+  },
+  message: {
+    margin: '0 0 24px 0',
+    fontSize: 14,
+    lineHeight: 1.5,
+    color: '#a3a3a3',
+    wordBreak: 'break-word' as const,
+  },
+  button: {
+    padding: '10px 28px',
+    fontSize: 14,
+    fontWeight: 500,
+    color: '#fff',
+    backgroundColor: '#2563eb',
+    border: 'none',
+    borderRadius: 8,
+    cursor: 'pointer',
+  },
+};
+
+// --- App ---
 
 function CompletionBanner() {
   const completionReason = useSessionStore((s) => s.completionReason);
@@ -118,14 +212,24 @@ const styles: Record<string, React.CSSProperties> = {
   },
   canvasWrapper: {
     flex: 1,
-    position: 'relative',
+    display: 'flex',
     overflow: 'hidden',
   },
   canvasArea: {
-    position: 'absolute',
-    inset: 0,
+    flex: 1,
+    position: 'relative',
     overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
   },
 };
 
-export default App;
+function AppWithBoundary() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
+export default AppWithBoundary;

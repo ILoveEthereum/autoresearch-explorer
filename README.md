@@ -1,150 +1,191 @@
-# Autoresearch
+# AutoResearch Explorer
 
-An AI agent that researches any question autonomously — while you watch and steer through a live visual canvas.
+> **Early-stage project** — this is an active work in progress. Expect rough edges, incomplete features, and things that break. Contributions and bug reports are welcome.
 
-You give it a question and a prompt template. The agent searches, reads, experiments, and evaluates in a loop. As it works, it builds a diagram on an infinite canvas: every step it takes, every source it finds, every conclusion it draws, every decision it makes. You watch the diagram grow in real time. When you want to intervene, you type a message or edit the diagram directly — and the agent adjusts course.
+An autonomous AI research agent with a live visual canvas. Give it a question — it researches, builds, and iterates while you watch, steer, or walk away.
 
-The diagram is not a visualization of the agent's work. It IS the agent's work. The canvas is the shared mental model between you and the AI.
+<p align="center">
+  <img src="docs/images/hero-canvas.svg" alt="AutoResearch Explorer — live research canvas with connected nodes" width="100%"/>
+</p>
+
+The agent's thinking is externalized as an interactive node graph. Every source it finds, every decision it makes, every piece of code it writes — visible on the canvas in real time. You intervene when you want to. The rest of the time, it works autonomously.
+
+---
+
+## What it does
+
+You describe what you want — "Build me a BitNet model for my MacBook M3 Pro" or "Survey mechanistic interpretability papers from 2024-2026" — and the agent:
+
+1. **Researches** — searches the web, reads papers, gathers information
+2. **Plans** — decomposes the problem into sub-questions on the canvas
+3. **Builds** — writes code, runs experiments, creates files in your chosen directory
+4. **Iterates** — evaluates results, adjusts approach, keeps going until done
+5. **Self-heals** — when stuck, builds itself new tools, tries different approaches, or asks you via Telegram
+
+You watch the canvas grow, zoom into any node for details, chat with the agent to steer it, or check in later via Telegram.
+
+---
+
+## Features
+
+**Visual research canvas** — React Flow-powered infinite canvas with dynamic node types. The agent invents its own node types based on what it discovers — architecture blocks, source nodes, experiment results — not limited to a fixed schema.
+
+**Multi-canvas architecture** — when the agent needs a tool that doesn't exist, it spawns a sub-agent on a separate canvas to build it. You see the full tree of canvases in the sidebar.
+
+**Self-improving** — builds custom tools when stuck, saves them globally for future sessions. Generates skill documents summarizing what worked and what failed. Cross-session memory via SQLite FTS5.
+
+**Works in your directory** — all code, research data, and artifacts are written to a folder you choose. No hidden state — everything is inspectable.
+
+**Watchdog metacognition** — a separate evaluator checks every few loops: is the agent making progress? Is it stuck? Is the research complete? Automatically triggers corrective actions or stops when done.
+
+**Telegram integration** — progress summaries, stuck alerts, and full remote control. Give it a task and go live your life.
+
+**Any LLM via OpenRouter** — searchable model picker with pricing. Use Claude, GPT-4, Gemini, Llama, Qwen, or any model on OpenRouter.
+
+---
+
+## Quick start
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) 18+
+- [Rust](https://rustup.rs/) (latest stable)
+- [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS
+- An [OpenRouter](https://openrouter.ai/) API key
+
+### Install and run
+
+```bash
+git clone https://github.com/YOUR_USERNAME/autoresearch-explorer.git
+cd autoresearch-explorer
+npm install
+npm run tauri dev
+```
+
+The app opens as a native desktop window. Create a new research session through the wizard.
+
+### Build for production
+
+```bash
+npm run tauri build
+```
+
+Produces a native binary in `src-tauri/target/release/`.
 
 ---
 
 ## How it works
 
-**1. Write a prompt template** (or pick a starter one).
-
-A prompt template is a single Markdown file that defines three things: what to research, how to research it, and what the output diagram should look like.
-
-```yaml
----
-name: "Survey: Mechanistic Interpretability"
-process:
-  loop:
-    - step: search
-      description: "Find relevant papers and talks"
-    - step: read
-      description: "Read and summarize each source"
-    - step: connect
-      description: "Link this source to what you already know"
-    - step: synthesize
-      description: "After every 5 sources, write a finding"
-  tools: [web_search, pdf_reader]
-canvas:
-  node_types:
-    source: { shape: box, fields: [title, authors, url, summary] }
-    finding: { shape: highlighted_box, fields: [claim, confidence] }
-    question: { shape: diamond, fields: [text, status] }
-  edge_types:
-    supports: { style: solid_arrow }
-    contradicts: { style: red_dashed }
-  layout:
-    primary_axis: radial
-    clustering: by_subtopic
----
-
-# Agent Instructions
-
-Search for papers on mechanistic interpretability in LLMs (2024-2026).
-Start with survey papers, then go deep on the most cited techniques.
-Rate each source on relevance, impact, and novelty (1-5 each).
-After every 5 sources in a subtopic, write a finding that synthesizes
-what the field currently knows.
-```
-
-**2. Start a session.** The agent reads the template and begins. Nodes appear on the canvas as it works.
-
-**3. Watch, steer, or walk away.** You can:
-- Watch the diagram grow in real time (zoom in on any node for details)
-- Chat with the agent ("go deeper on circuits-level analysis")
-- Click a node and say "this seems wrong" or "explore more like this"
-- Delete a branch the agent is wasting time on
-- Add a sticky note with context the agent doesn't have
-- Pause, go get coffee, come back and resume
-- Scrub through history to see how the research unfolded
-
-**4. Export.** When done, export the canvas as an image, a structured Markdown report, or raw JSON.
+<p align="center">
+  <img src="docs/images/agent-loop.svg" alt="Agent loop architecture — from session wizard through tool execution, canvas updates, and watchdog evaluation" width="100%"/>
+</p>
 
 ---
 
-## What it's for
+## Built-in tools
 
-Different templates produce different kinds of research on different kinds of canvases:
+| Tool | What it does |
+|---|---|
+| `web_search` | Search the web |
+| `web_read` | Fetch and parse a URL to markdown |
+| `shell` | Run any shell command natively (full GPU/MPS access) |
+| `file_read` / `file_write` / `file_list` | File operations in the working directory |
+| `git` | Clone, commit, diff, log, branch |
+| `package_manager` | Auto-detect pip/npm/cargo and install packages |
+| `arxiv_search` | Search arXiv for papers, returns structured metadata |
+| `code_executor` | Run Python/JS/Bash/Swift code |
 
-| Template | What the agent does | What the canvas looks like |
-|---|---|---|
-| ML Optimization | Modifies a training script in a loop, evaluating each change | Horizontal timeline of experiments (green = kept, red = discarded) |
-| Literature Review | Searches, reads, and synthesizes papers on a topic | Radial knowledge web clustered by subtopic |
-| Math Exploration | Tests conjectures computationally, attempts proofs, branches into sub-questions | Top-down proof tree |
-| General Research | Open-ended web research on any question | Organic knowledge graph |
-
-Same engine. Same canvas. Different templates.
-
----
-
-## Concepts
-
-**Prompt template** — the single Markdown file that defines a research session. Contains the research process (what steps to follow), the canvas schema (what nodes and edges mean), and freeform instructions for the agent. Templates are the main thing the community contributes.
-
-**Canvas** — the infinite visual surface where the agent externalizes its thinking. Nodes represent steps, sources, findings, decisions. Edges represent relationships. The human can observe and edit. The agent updates it every cycle.
-
-**Canvas operations** — structured messages the agent emits to update the canvas: `ADD_NODE`, `UPDATE_NODE`, `ADD_EDGE`, `SET_FOCUS`, etc. These are the agent's "output language."
-
-**Human signals** — structured messages generated when the human interacts with the canvas or chat: `CHAT`, `DEPRIORITIZE`, `PRIORITIZE`, `CHALLENGE`, `ANNOTATE`, `INVESTIGATE`. These are the human's "input language."
-
-**Session** — a running or paused research instance. Contains the canvas state, full history (every step), cached sources, and generated artifacts. Sessions can be saved, resumed, forked, and exported.
+The agent can also build its own tools at runtime and save them for future sessions.
 
 ---
 
-## Architecture
+## Session wizard
 
-```
-Template ──▶ Agent Runtime ──▶ Canvas Operations ──▶ Canvas
-                  ▲                                     │
-                  │                                     │
-                  └──── Human Signals ◄────────────────┘
-```
+The 6-step wizard guides you through:
 
-The agent runs a continuous loop: collect human signals → build LLM context → call LLM → execute tools → emit canvas operations → snapshot → repeat. The template defines the loop structure, available tools, evaluation criteria, and canvas vocabulary. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full technical design.
+1. **What are you researching?** — describe your goal
+2. **What does success look like?** — define completion criteria (the watchdog uses this to know when to stop)
+3. **How should the agent work?** — pick an approach (build a project, literature review, explore a topic, ML optimization, build a tool, build a skill)
+4. **Where should it work?** — pick a folder on your machine
+5. **Model & API** — choose any model on OpenRouter
+6. **Past experience** — load relevant skills and tools from previous sessions
 
 ---
 
 ## Tech stack
 
-- **Desktop shell:** Tauri (Rust)
-- **UI:** React + TypeScript
-- **Canvas:** HTML Canvas 2D + Rough.js
-- **Layout:** Dagre + force-directed
-- **State:** Zustand
-- **LLM:** Provider-agnostic (Anthropic, OpenAI, Ollama)
-- **Code sandbox:** Docker
-- **Persistence:** JSON files on disk
+| Component | Choice |
+|---|---|
+| Desktop shell | Tauri (Rust) |
+| Frontend | React 19 + TypeScript |
+| Canvas | React Flow |
+| State | Zustand |
+| LLM | OpenRouter (any model) |
+| Memory | SQLite FTS5 (rusqlite) |
+| Messaging | Telegram Bot API |
+| Persistence | JSON files on disk |
 
 ---
 
-## Project status
+## Project structure
 
-This project is in the design phase. The documents in this repo:
+```
+src/                    # React frontend
+  ├── canvas/           # React Flow canvas components
+  ├── panels/           # Sidebar panels (detail, chat, settings)
+  ├── panels/wizard/    # Session creation wizard
+  ├── stores/           # Zustand state stores
+  └── hooks/            # Tauri event listeners
 
-- [**Product Spec**](./autoresearch-viewer-spec.md) — what we're building and why
-- [**Architecture**](./ARCHITECTURE.md) — how the system is structured technically
-- [**Prompt Template Draft**](./prompt-template-draft.md) — exploration of the template format with examples
+src-tauri/              # Rust backend
+  ├── src/agent/        # Agent runtime, watchdog, checkpointing
+  ├── src/commands/     # Tauri IPC commands
+  ├── src/llm/          # LLM client (OpenRouter)
+  ├── src/storage/      # Session persistence, global index
+  ├── src/telegram/     # Telegram bot
+  └── src/tools/        # Built-in tool implementations
+
+templates/              # Prompt templates (.md files)
+docs/plans/             # Design documents
+```
 
 ---
 
 ## Inspiration
 
-- [Karpathy's autoresearch](https://github.com/karpathy/autoresearch) — proved autonomous experiment loops work. We generalize it beyond ML and add the visual interface.
-- [Reflexion](https://arxiv.org/abs/2303.11366) — showed that an agent's state can be its own self-modifying prompt. We make that state visual.
-- [Excalidraw](https://excalidraw.com) — the canvas aesthetic. Hand-drawn, informal, approachable.
-- Self-driving labs (DMTA loop) — the most mature autonomous research systems, in chemistry and materials science.
+- [Karpathy's autoresearch](https://github.com/karpathy/autoresearch) — proved autonomous experiment loops work
+- [Hermes Agent](https://github.com/NousResearch/hermes-agent) — self-improving agent with persistent memory and skill documents
+- [Reflexion](https://arxiv.org/abs/2303.11366) — agent state as self-modifying prompt
+- Self-driving labs (DMTA loop) — autonomous research systems in chemistry and materials science
 
 ---
 
 ## Contributing
 
-This is an open-source project. The easiest way to contribute is to write a prompt template for a domain you know well. Templates are single Markdown files — no code required. See [prompt-template-draft.md](./prompt-template-draft.md) for the format and examples.
+Contributions welcome. The easiest way to contribute is to write a prompt template for a domain you know well — templates are single Markdown files, no code required.
+
+For code contributions:
+
+```bash
+# Fork and clone
+git clone https://github.com/YOUR_USERNAME/autoresearch-explorer.git
+cd autoresearch-explorer
+
+# Install dependencies
+npm install
+
+# Run in development
+npm run tauri dev
+
+# Type check
+npx tsc --noEmit
+cd src-tauri && cargo check
+```
 
 ---
 
 ## License
 
-MIT
+[GNU Affero General Public License v3.0](LICENSE)
+
+Copyright (c) 2026 Mekyle Naidoo

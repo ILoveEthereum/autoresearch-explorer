@@ -1,10 +1,10 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
-  Controls,
-  MiniMap,
   BackgroundVariant,
+  useReactFlow,
   type Node,
   type Edge,
   type OnNodeContextMenu,
@@ -20,7 +20,6 @@ import { FindingNode } from './nodes/FindingNode';
 import { CheckpointNode } from './nodes/CheckpointNode';
 import type { CanvasNode, CanvasEdge, NodeTypeDefinition } from '../types/canvas';
 
-// Register custom node types (must be stable reference outside component)
 const nodeTypes = {
   question: DiamondNode,
   finding: FindingNode,
@@ -76,7 +75,47 @@ function toReactFlowEdge(edge: CanvasEdge): Edge {
   };
 }
 
-export function CanvasView() {
+function CenterButton() {
+  const { setCenter, getNodes } = useReactFlow();
+
+  const handleCenter = () => {
+    const nodes = getNodes();
+    if (nodes.length === 0) return;
+    // Go to the first node
+    const first = nodes[0];
+    setCenter(first.position.x + 90, first.position.y + 25, { zoom: 1, duration: 300 });
+  };
+
+  return (
+    <button
+      onClick={handleCenter}
+      style={{
+        position: 'absolute',
+        bottom: 16,
+        right: 16,
+        zIndex: 10,
+        width: 36,
+        height: 36,
+        borderRadius: 8,
+        border: '1px solid #e5e7eb',
+        background: '#fff',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+      }}
+      title="Fit all nodes in view"
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3" stroke="#374151" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <rect x="5" y="5" width="6" height="6" rx="1" stroke="#374151" strokeWidth="1.2" />
+      </svg>
+    </button>
+  );
+}
+
+function CanvasInner() {
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
   const canvasNodeTypes = useCanvasStore((s) => s.nodeTypes);
@@ -89,7 +128,6 @@ export function CanvasView() {
     nodeId: string;
   } | null>(null);
 
-  // Convert canvas nodes/edges to React Flow format
   const rfNodes = useMemo(
     () => nodes.map((n) => toReactFlowNode(n, canvasNodeTypes, selectedNodeId)),
     [nodes, canvasNodeTypes, selectedNodeId]
@@ -122,7 +160,7 @@ export function CanvasView() {
   );
 
   return (
-    <div style={{ width: '100%', height: '100%' }}>
+    <>
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -143,19 +181,9 @@ export function CanvasView() {
         elementsSelectable={false}
       >
         <Background variant={BackgroundVariant.Dots} gap={40} size={1} color="#e5e7eb" />
-        <Controls
-          showInteractive={false}
-          style={{ bottom: 16, right: 16 }}
-        />
-        <MiniMap
-          nodeColor={(node) => {
-            const d = node.data as { typeDef?: NodeTypeDefinition; status?: string };
-            return d.typeDef?.color || '#9ca3af';
-          }}
-          maskColor="rgba(250, 250, 250, 0.7)"
-          style={{ bottom: 16, left: 16 }}
-        />
       </ReactFlow>
+
+      <CenterButton />
 
       {contextMenu && (
         <ContextMenu
@@ -165,6 +193,16 @@ export function CanvasView() {
           onClose={() => setContextMenu(null)}
         />
       )}
+    </>
+  );
+}
+
+export function CanvasView() {
+  return (
+    <div style={{ position: 'absolute', inset: 0 }}>
+      <ReactFlowProvider>
+        <CanvasInner />
+      </ReactFlowProvider>
     </div>
   );
 }

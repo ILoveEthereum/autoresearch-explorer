@@ -35,8 +35,9 @@ export function HomeScreen() {
       agent: { current_loop: number };
     }>('load_session', { sessionId: session.id });
 
+    const canvas = state.canvas || { nodes: [], edges: [], clusters: [], node_types: [] };
     useCanvasStore.setState({
-      nodes: state.canvas.nodes.map((n: any) => ({
+      nodes: (canvas.nodes || []).map((n: any) => ({
         id: n.id,
         type: n.node_type || n.type,
         title: n.title,
@@ -48,7 +49,7 @@ export function HomeScreen() {
         createdAt: n.created_at || new Date().toISOString(),
         loopIndex: n.loop_index,
       })),
-      edges: state.canvas.edges.map((e: any) => ({
+      edges: (canvas.edges || []).map((e: any) => ({
         id: e.id,
         from: e.from,
         to: e.to,
@@ -56,8 +57,8 @@ export function HomeScreen() {
         label: e.label,
         style: e.style,
       })),
-      clusters: state.canvas.clusters || [],
-      nodeTypes: state.canvas.node_types || [...BUILTIN_NODE_TYPES],
+      clusters: canvas.clusters || [],
+      nodeTypes: canvas.node_types || [...BUILTIN_NODE_TYPES],
       focusNodeId: null,
     });
 

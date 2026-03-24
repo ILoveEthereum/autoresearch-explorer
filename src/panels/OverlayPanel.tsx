@@ -63,15 +63,10 @@ const styles: Record<string, React.CSSProperties> = {
   panel: {
     width: 280,
     minWidth: 280,
-    position: 'absolute',
-    top: 0,
-    left: 48,
-    bottom: 0,
     background: '#ffffff',
-    boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
+    borderRight: '1px solid #e5e7eb',
     display: 'flex',
     flexDirection: 'column',
-    zIndex: 20,
     overflow: 'hidden',
   },
   header: {

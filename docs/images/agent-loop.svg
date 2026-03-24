@@ -1,0 +1,206 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" fill="none">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#00000018"/>
+    </filter>
+    <pattern id="dots" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="0.8" fill="#d4d4d4"/>
+    </pattern>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#b1b1b7"/>
+    </marker>
+    <marker id="arrowDark" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#1a192b"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#ef4444"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#22c55e"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="420" fill="#fafafa" rx="12"/>
+  <rect width="1200" height="420" fill="url(#dots)" rx="12" opacity="0.5"/>
+
+  <!-- Title -->
+  <text x="600" y="36" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="700" fill="#1a192b" letter-spacing="-0.3">How the Agent Loop Works</text>
+
+  <!-- ====== MAIN FLOW (horizontal) ====== -->
+
+  <!-- Step 1: Session Wizard (input node, rounded) -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="80" width="150" height="70" rx="35" fill="#ffffff" stroke="#1a192b" stroke-width="2"/>
+    <text x="105" y="108" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#1a192b">Session Wizard</text>
+    <text x="105" y="124" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="#6e6e76">Question + criteria</text>
+    <text x="105" y="137" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="#6e6e76">+ model + directory</text>
+    <circle cx="180" cy="115" r="4" fill="#1a192b"/>
+  </g>
+
+  <!-- Arrow: Wizard → Collect -->
+  <path d="M 184 115 L 224 115" stroke="#1a192b" stroke-width="2" fill="none" marker-end="url(#arrowDark)"/>
+
+  <!-- Step 2: Collect Signals -->
+  <g filter="url(#shadow)">
+    <rect x="228" y="80" width="148" height="70" rx="8" fill="#ffffff" stroke="#1a192b" stroke-width="1.5"/>
+    <rect x="228" y="80" width="148" height="22" rx="8" fill="#1a192b"/>
+    <rect x="228" y="94" width="148" height="8" fill="#1a192b"/>
+    <text x="238" y="96" font-family="system-ui, sans-serif" font-size="9" font-weight="600" fill="#fff">1 · Collect Signals</text>
+    <text x="238" y="119" font-family="system-ui, sans-serif" font-size="8" fill="#6e6e76">Chat messages, file edits,</text>
+    <text x="238" y="131" font-family="system-ui, sans-serif" font-size="8" fill="#6e6e76">human steering inputs</text>
+    <circle cx="228" cy="115" r="4" fill="#1a192b"/>
+    <circle cx="376" cy="115" r="4" fill="#1a192b"/>
+  </g>
+
+  <!-- Arrow: Collect → LLM -->
+  <path d="M 380 115 L 415 115" stroke="#1a192b" stroke-width="2" fill="none" marker-end="url(#arrowDark)"/>
+
+  <!-- Step 3: LLM Call -->
+  <g filter="url(#shadow)">
+    <rect x="419" y="80" width="148" height="70" rx="8" fill="#ffffff" stroke="#1a192b" stroke-width="1.5"/>
+    <rect x="419" y="80" width="148" height="22" rx="8" fill="#2d2b42"/>
+    <rect x="419" y="94" width="148" height="8" fill="#2d2b42"/>
+    <text x="429" y="96" font-family="system-ui, sans-serif" font-size="9" font-weight="600" fill="#fff">2 · Call LLM</text>
+    <text x="429" y="119" font-family="system-ui, sans-serif" font-size="8" fill="#6e6e76">Build context → OpenRouter</text>
+    <text x="429" y="131" font-family="system-ui, sans-serif" font-size="8" fill="#6e6e76">→ plan + tool calls</text>
+    <circle cx="419" cy="115" r="4" fill="#1a192b"/>
+    <circle cx="567" cy="115" r="4" fill="#1a192b"/>
+  </g>
+
+  <!-- Arrow: LLM → Execute -->
+  <path d="M 571 115 L 606 115" stroke="#1a192b" stroke-width="2" fill="none" marker-end="url(#arrowDark)"/>
+
+  <!-- Step 4: Execute Tools -->
+  <g filter="url(#shadow)">
+    <rect x="610" y="80" width="148" height="70" rx="8" fill="#ffffff" stroke="#ff6b6b" stroke-width="2"/>
+    <rect x="610" y="80" width="148" height="22" rx="8" fill="#ff6b6b"/>
+    <rect x="610" y="94" width="148" height="8" fill="#ff6b6b"/>
+    <text x="620" y="96" font-family="system-ui, sans-serif" font-size="9" font-weight="600" fill="#fff">3 · Execute Tools</text>
+    <text x="620" y="119" font-family="system-ui, sans-serif" font-size="8" fill="#6e6e76">web_search, shell, git,</text>
+    <text x="620" y="131" font-family="system-ui, sans-serif" font-size="8" fill="#6e6e76">file_write, code_executor</text>
+    <circle cx="610" cy="115" r="4" fill="#ff6b6b"/>
+    <circle cx="758" cy="115" r="4" fill="#1a192b"/>
+  </g>
+
+  <!-- Arrow: Execute → Canvas -->
+  <path d="M 762 115 L 797 115" stroke="#1a192b" stroke-width="2" fill="none" marker-end="url(#arrowDark)"/>
+
+  <!-- Step 5: Emit to Canvas -->
+  <g filter="url(#shadow)">
+    <rect x="801" y="80" width="148" height="70" rx="8" fill="#ffffff" stroke="#1a192b" stroke-width="1.5"/>
+    <rect x="801" y="80" width="148" height="22" rx="8" fill="#1a192b"/>
+    <rect x="801" y="94" width="148" height="8" fill="#1a192b"/>
+    <text x="811" y="96" font-family="system-ui, sans-serif" font-size="9" font-weight="600" fill="#fff">4 · Update Canvas</text>
+    <text x="811" y="119" font-family="system-ui, sans-serif" font-size="8" fill="#6e6e76">Add/update nodes + edges</text>
+    <text x="811" y="131" font-family="system-ui, sans-serif" font-size="8" fill="#6e6e76">Write loop data to disk</text>
+    <circle cx="801" cy="115" r="4" fill="#1a192b"/>
+    <circle cx="949" cy="115" r="4" fill="#1a192b"/>
+  </g>
+
+  <!-- Arrow: Canvas → Watchdog -->
+  <path d="M 953 115 L 988 115" stroke="#1a192b" stroke-width="2" fill="none" marker-end="url(#arrowDark)"/>
+
+  <!-- Step 6: Watchdog (diamond-ish) -->
+  <g filter="url(#shadow)">
+    <rect x="992" y="75" width="170" height="80" rx="8" fill="#fffbeb" stroke="#f59e0b" stroke-width="2"/>
+    <text x="1077" y="100" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#b45309">🐕 Watchdog</text>
+    <text x="1077" y="117" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="#92400e">Stuck? Complete?</text>
+    <text x="1077" y="131" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="#92400e">Making progress?</text>
+    <text x="1077" y="148" text-anchor="middle" font-family="system-ui, sans-serif" font-size="8" fill="#a16207">evaluates every N loops</text>
+  </g>
+
+  <!-- ====== WATCHDOG OUTCOMES ====== -->
+
+  <!-- Continue arrow (loops back) -->
+  <path d="M 1077 155 L 1077 195 L 302 195 L 302 155" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#arrowGreen)" stroke-dasharray="6,3"/>
+  <rect x="620" y="183" width="90" height="22" rx="11" fill="#f0fdf4" stroke="#22c55e" stroke-width="1"/>
+  <text x="665" y="198" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" font-weight="600" fill="#16a34a">↻ Continue</text>
+
+  <!-- Stuck arrow (goes down to tool builder) -->
+  <path d="M 1040 155 L 1040 250 L 920 250" stroke="#ef4444" stroke-width="2" fill="none" marker-end="url(#arrowRed)"/>
+  <text x="1048" y="220" font-family="system-ui, sans-serif" font-size="9" font-weight="600" fill="#ef4444">Stuck</text>
+
+  <!-- Complete arrow (goes down-right) -->
+  <path d="M 1120 155 L 1120 250 L 1050 250" stroke="#3b82f6" stroke-width="2" fill="none"/>
+  <text x="1128" y="220" font-family="system-ui, sans-serif" font-size="9" font-weight="600" fill="#3b82f6">Done</text>
+
+  <!-- Tool Builder sub-agent -->
+  <g filter="url(#shadow)">
+    <rect x="730" y="225" width="190" height="65" rx="8" fill="#fff" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5,3"/>
+    <rect x="730" y="225" width="190" height="22" rx="8" fill="#fef2f2"/>
+    <rect x="730" y="239" width="190" height="8" fill="#fef2f2"/>
+    <text x="740" y="241" font-family="system-ui, sans-serif" font-size="9" font-weight="600" fill="#dc2626">🔧 Tool Builder Sub-Agent</text>
+    <text x="740" y="263" font-family="system-ui, sans-serif" font-size="8" fill="#6e6e76">Spawns on separate canvas</text>
+    <text x="740" y="275" font-family="system-ui, sans-serif" font-size="8" fill="#6e6e76">Builds missing tools → retries</text>
+  </g>
+
+  <!-- Complete output -->
+  <g filter="url(#shadow)">
+    <rect x="1010" y="230" width="160" height="55" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="1090" y="254" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#1d4ed8">✅ Complete</text>
+    <text x="1090" y="272" text-anchor="middle" font-family="system-ui, sans-serif" font-size="8" fill="#1e40af">Generate skill doc + stop</text>
+  </g>
+
+  <!-- ====== BOTTOM ROW: Tools & Outputs ====== -->
+
+  <!-- Built-in Tools -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="310" width="530" height="90" rx="8" fill="#ffffff" stroke="#e5e5e5" stroke-width="1"/>
+    <text x="50" y="335" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#1a192b">Built-in Tools</text>
+
+    <!-- Tool pills -->
+    <rect x="50" y="348" width="75" height="22" rx="11" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1"/>
+    <text x="87" y="363" text-anchor="middle" font-family="monospace" font-size="8" fill="#374151">web_search</text>
+
+    <rect x="133" y="348" width="65" height="22" rx="11" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1"/>
+    <text x="165" y="363" text-anchor="middle" font-family="monospace" font-size="8" fill="#374151">web_read</text>
+
+    <rect x="206" y="348" width="48" height="22" rx="11" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1"/>
+    <text x="230" y="363" text-anchor="middle" font-family="monospace" font-size="8" fill="#374151">shell</text>
+
+    <rect x="262" y="348" width="58" height="22" rx="11" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1"/>
+    <text x="291" y="363" text-anchor="middle" font-family="monospace" font-size="8" fill="#374151">file_ops</text>
+
+    <rect x="328" y="348" width="38" height="22" rx="11" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1"/>
+    <text x="347" y="363" text-anchor="middle" font-family="monospace" font-size="8" fill="#374151">git</text>
+
+    <rect x="374" y="348" width="78" height="22" rx="11" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1"/>
+    <text x="413" y="363" text-anchor="middle" font-family="monospace" font-size="8" fill="#374151">arxiv_search</text>
+
+    <rect x="460" y="348" width="85" height="22" rx="11" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1"/>
+    <text x="502" y="363" text-anchor="middle" font-family="monospace" font-size="8" fill="#374151">code_executor</text>
+
+    <text x="50" y="389" font-family="system-ui, sans-serif" font-size="8" fill="#9ca3af">+ agent-built custom tools saved across sessions</text>
+  </g>
+
+  <!-- Working Directory output -->
+  <g filter="url(#shadow)">
+    <rect x="580" y="310" width="260" height="90" rx="8" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.2"/>
+    <text x="600" y="335" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#15803d">📁 Your Working Directory</text>
+    <text x="600" y="355" font-family="monospace" font-size="8" fill="#166534">overview.md     ← updated live</text>
+    <text x="600" y="368" font-family="monospace" font-size="8" fill="#166534">model.py        ← agent's code</text>
+    <text x="600" y="381" font-family="monospace" font-size="8" fill="#166534">autoresearch/   ← internal state</text>
+    <text x="600" y="394" font-family="monospace" font-size="8" fill="#166534">tools/          ← custom tools</text>
+  </g>
+
+  <!-- Telegram -->
+  <g filter="url(#shadow)">
+    <rect x="860" y="310" width="160" height="90" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2"/>
+    <text x="880" y="335" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#1d4ed8">📱 Telegram</text>
+    <text x="880" y="355" font-family="system-ui, sans-serif" font-size="8" fill="#1e40af">Progress summaries</text>
+    <text x="880" y="368" font-family="system-ui, sans-serif" font-size="8" fill="#1e40af">Stuck alerts</text>
+    <text x="880" y="381" font-family="system-ui, sans-serif" font-size="8" fill="#1e40af">Remote commands</text>
+    <text x="880" y="394" font-family="system-ui, sans-serif" font-size="8" fill="#1e40af">Full control from phone</text>
+  </g>
+
+  <!-- SQLite Memory -->
+  <g filter="url(#shadow)">
+    <rect x="1040" y="310" width="130" height="90" rx="8" fill="#faf5ff" stroke="#a855f7" stroke-width="1.2"/>
+    <text x="1060" y="335" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#7e22ce">🧠 Memory</text>
+    <text x="1060" y="355" font-family="system-ui, sans-serif" font-size="8" fill="#6b21a8">SQLite FTS5</text>
+    <text x="1060" y="368" font-family="system-ui, sans-serif" font-size="8" fill="#6b21a8">Cross-session recall</text>
+    <text x="1060" y="381" font-family="system-ui, sans-serif" font-size="8" fill="#6b21a8">Skill documents</text>
+    <text x="1060" y="394" font-family="system-ui, sans-serif" font-size="8" fill="#6b21a8">Tool registry</text>
+  </g>
+</svg>

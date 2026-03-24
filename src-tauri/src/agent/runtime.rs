@@ -620,8 +620,28 @@ If no specific tool would help, reply: {{"tool_name": "none", "description": "no
         // Apply canvas operations
         self.canvas_state.apply_ops(&response.canvas_operations, loop_index);
 
-        // Emit canvas ops to frontend
-        let _ = app.emit("canvas-ops", &response.canvas_operations);
+        // Emit canvas ops to frontend, injecting loop_index and reasoning
+        let mut enriched_ops = serde_json::to_value(&response.canvas_operations)
+            .unwrap_or(serde_json::Value::Array(vec![]));
+        if let Some(arr) = enriched_ops.as_array_mut() {
+            for op in arr.iter_mut() {
+                // Inject loop_index into ADD_NODE ops
+                if op.get("op").and_then(|v| v.as_str()) == Some("ADD_NODE") {
+                    if let Some(node) = op.get_mut("node") {
+                        if let Some(obj) = node.as_object_mut() {
+                            obj.insert("loop_index".to_string(), serde_json::json!(loop_index));
+                        }
+                    }
+                }
+            }
+        }
+        let _ = app.emit("canvas-ops", &enriched_ops);
+        // Also emit loop context so frontend can store reasoning
+        let _ = app.emit("loop-context", serde_json::json!({
+            "loop_index": loop_index,
+            "reasoning": &response.reasoning,
+            "plan": &response.plan,
+        }));
 
         // Write loop files
         let _ = app.emit("agent-status", serde_json::json!({

@@ -3,6 +3,43 @@ use std::path::Path;
 
 const MAX_OUTPUT_CHARS: usize = 10000;
 
+/// Dangerous shell patterns that indicate command injection attempts.
+const DANGEROUS_PATTERNS: &[&str] = &[
+    "; rm", ";rm", "&& rm", "&&rm", "|| rm", "||rm",
+    "| rm", "|rm", "; sudo", ";sudo", "&& sudo", "&&sudo",
+    "; curl", ";curl", "&& curl", "&&curl",
+    "; wget", ";wget", "&& wget", "&&wget",
+    "; chmod", ";chmod", "&& chmod", "&&chmod",
+    "; mkfs", ";mkfs", "; dd ", ";dd ",
+    "; shutdown", ";shutdown", "; reboot", ";reboot",
+    ">/dev/sd", ">/dev/null", "| sh", "|sh",
+    "| bash", "|bash", "| zsh", "|zsh",
+];
+
+/// Check if a command contains shell injection patterns.
+fn contains_dangerous_pattern(command: &str) -> Option<&'static str> {
+    let lower = command.to_lowercase();
+
+    // Check for backtick subshells
+    if lower.contains('`') {
+        return Some("backtick subshell");
+    }
+
+    // Check for $() subshells
+    if lower.contains("$(") {
+        return Some("$() subshell");
+    }
+
+    // Check for known dangerous patterns
+    for pattern in DANGEROUS_PATTERNS {
+        if lower.contains(pattern) {
+            return Some(pattern);
+        }
+    }
+
+    None
+}
+
 /// Execute a shell command in the given working directory with a timeout.
 pub async fn execute_shell(command: &str, working_dir: &Path, timeout_secs: u64) -> ToolResult {
     if command.is_empty() {
@@ -10,6 +47,23 @@ pub async fn execute_shell(command: &str, working_dir: &Path, timeout_secs: u64)
             success: false,
             output: String::new(),
             error: Some("Empty command".to_string()),
+        };
+    }
+
+    // Check for dangerous patterns
+    if let Some(pattern) = contains_dangerous_pattern(command) {
+        tracing::warn!(
+            "Blocked shell command containing dangerous pattern '{}': {}",
+            pattern,
+            command
+        );
+        return ToolResult {
+            success: false,
+            output: String::new(),
+            error: Some(format!(
+                "Command blocked: contains dangerous pattern '{}'. Shell metacharacters, subshells, and destructive commands are not allowed.",
+                pattern
+            )),
         };
     }
 

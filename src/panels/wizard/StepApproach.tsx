@@ -54,12 +54,13 @@ export function StepApproach({ approach, setApproach, maxLoops, setMaxLoops }: P
 
       <div style={styles.radioGroup}>
         {APPROACHES.map((opt) => (
-          <label
+          <div
             key={opt.id}
             style={{
               ...styles.radioCard,
               ...(approach === opt.id ? styles.radioCardSelected : {}),
             }}
+            onClick={() => setApproach(opt.id)}
           >
             <div style={styles.radioOuter}>
               {approach === opt.id && <div style={styles.radioInner} />}
@@ -68,7 +69,7 @@ export function StepApproach({ approach, setApproach, maxLoops, setMaxLoops }: P
               <div style={styles.radioLabel}>{opt.label}</div>
               <div style={styles.radioDesc}>{opt.description}</div>
             </div>
-          </label>
+          </div>
         ))}
       </div>
 
